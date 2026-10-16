@@ -1,0 +1,21 @@
+{
+  "id": "sr-1",
+  "name": "Mechanical Engineering Intern",
+  "applyUrl": "https://jobs.smartrecruiters.com/Acme/sr-1/apply",
+  "jobAd": {
+    "sections": {
+      "companyDescription": {
+        "title": "Company Description",
+        "text": "<p>Acme builds advanced hardware.</p>"
+      },
+      "jobDescription": {
+        "title": "Job Description",
+        "text": "<p>Hybrid mechanical engineering internship on the product design team.</p>"
+      },
+      "qualifications": {
+        "title": "Requirements",
+        "text": "<ul><li>SolidWorks and GD&amp;T</li><li>FEA with ANSYS</li></ul>"
+      }
+    }
+  }
+}

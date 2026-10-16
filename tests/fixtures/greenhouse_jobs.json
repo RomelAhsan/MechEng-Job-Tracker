@@ -1,0 +1,23 @@
+{
+  "jobs": [
+    {
+      "id": 101,
+      "title": "Mechanical Engineering Co-op",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/101",
+      "updated_at": "2026-01-15T12:00:00-05:00",
+      "first_published": "2026-01-01T09:00:00-05:00",
+      "location": {"name": "Toronto, ON, Canada"},
+      "departments": [{"name": "Hardware"}],
+      "content": "&lt;h3&gt;Requirements&lt;/h3&gt;&lt;ul&gt;&lt;li&gt;Pursuing a degree in Mechanical Engineering&lt;/li&gt;&lt;li&gt;Experience with SolidWorks and CAD&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Hybrid role on our thermal systems team.&lt;/p&gt;"
+    },
+    {
+      "id": 102,
+      "title": "Robotics Intern",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/102",
+      "updated_at": "2026-01-16T12:00:00-05:00",
+      "location": {"name": "Austin, TX"},
+      "departments": [{"name": "Robotics"}],
+      "content": ""
+    }
+  ]
+}

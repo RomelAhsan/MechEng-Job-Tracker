@@ -1,0 +1,229 @@
+"""ORM models using only portable SQLAlchemy types.
+
+Portable types only (String, Text, Integer, Float, Boolean,
+DateTime(timezone=True), JSON) so the SQLite dev database stays
+PostgreSQL-compatible.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import JSON as SA_JSON
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from jobtracker.db.base import Base
+
+
+class Company(Base):
+    """A tracked employer / ATS board (design 3.1)."""
+
+    __tablename__ = "companies"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    ats: Mapped[str] = mapped_column(String, nullable=False)
+    board_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    careers_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    priority: Mapped[str | None] = mapped_column(String, nullable=True)
+    check_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    locations: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Job(Base):
+    """Canonical job posting schema (design 3.2)."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint("company_id", "source_job_id", name="uq_jobs_company_source"),
+        Index("ix_jobs_company_id", "company_id"),
+        Index("ix_jobs_status", "status"),
+        Index("ix_jobs_classification", "classification"),
+        Index("ix_jobs_term_season", "term_season"),
+        Index("ix_jobs_posted_at", "posted_at"),
+        Index("ix_jobs_first_seen_at", "first_seen_at"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String, primary_key=True)
+    company_id: Mapped[str] = mapped_column(String, ForeignKey("companies.id"), nullable=False)
+    source_job_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    normalized_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str | None] = mapped_column(String, nullable=True)
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
+    province_state: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    remote_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    employment_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    department: Mapped[str | None] = mapped_column(String, nullable=True)
+    team: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requirements: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    preferred_qualifications: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    skills: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    description_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    application_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    term_season: Mapped[str | None] = mapped_column(String, nullable=True)
+    term_start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    term_end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_label: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    citizenship_requirement: Mapped[str | None] = mapped_column(String, nullable=True)
+    work_authorization_requirement: Mapped[str | None] = mapped_column(String, nullable=True)
+    visa_sponsorship: Mapped[str | None] = mapped_column(String, nullable=True)
+    sponsorship_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sponsorship_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    classification: Mapped[str | None] = mapped_column(String, nullable=True)
+    fit_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    classification_reasons: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+
+    ai_analysis: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    raw_payload: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    eligibility_status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class JobEvent(Base):
+    """Append-only detection audit log (design 3.3)."""
+
+    __tablename__ = "job_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=False)
+    company_id: Mapped[str] = mapped_column(String, ForeignKey("companies.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    old_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    new_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SourceHealth(Base):
+    """One row per company tracking fetch health (design 3.4)."""
+
+    __tablename__ = "source_health"
+
+    company_id: Mapped[str] = mapped_column(
+        String, ForeignKey("companies.id"), primary_key=True
+    )
+    last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_successful_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_change_detected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_job_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_jobs_last_run: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    removed_jobs_last_run: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class QuarantineItem(Base):
+    """Payloads that failed validation (design 3.5)."""
+
+    __tablename__ = "quarantine_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_id: Mapped[str] = mapped_column(String, ForeignKey("companies.id"), nullable=False)
+    source_job_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_payload: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+# --- Scaffolds: nullable, unused, not wired to auth (design 3.6) ---
+
+
+class User(Base):
+    """Multi-user scaffold (unused in Phase 1)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SavedJob(Base):
+    """Saved-job scaffold (unused in Phase 1)."""
+
+    __tablename__ = "saved_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApplicationStatus(Base):
+    """Application-status scaffold (unused in Phase 1)."""
+
+    __tablename__ = "application_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserProfile(Base):
+    """User-profile scaffold with profile_version (unused in Phase 1)."""
+
+    __tablename__ = "user_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    data: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationLog(Base):
+    """Notification log scaffold (Phase 5, unused in Phase 1)."""
+
+    __tablename__ = "notification_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -1,0 +1,39 @@
+{
+  "jobs": [
+    {
+      "id": "ashby-1",
+      "title": "Mechatronics Intern",
+      "department": "Engineering",
+      "team": "Robotics",
+      "employmentType": "Intern",
+      "location": "Vancouver, BC, Canada",
+      "publishedAt": "2026-02-01T10:00:00.000+00:00",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-1",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-1/application",
+      "descriptionHtml": "<h3>Requirements</h3><ul><li>MATLAB and Simulink</li><li>Prototyping experience</li></ul><p>Onsite mechatronics internship.</p>"
+    },
+    {
+      "id": "ashby-2",
+      "title": "Thermal Engineering Intern",
+      "department": "Engineering",
+      "team": "Thermal",
+      "employmentType": "Intern",
+      "location": "Remote - Canada",
+      "publishedAt": "2026-02-02T10:00:00.000+00:00",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-2",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-2/application",
+      "descriptionHtml": ""
+    },
+    {
+      "id": "ashby-3",
+      "title": "Unlisted Draft Role",
+      "location": "Nowhere",
+      "isListed": false,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-3",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-3/application",
+      "descriptionHtml": "<p>Should be skipped.</p>"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "lever-1",
+    "text": "Mechanical Design Intern",
+    "categories": {
+      "location": "Kitchener, ON, Canada",
+      "department": "Engineering",
+      "team": "Product Design",
+      "commitment": "Internship"
+    },
+    "createdAt": 1767225600000,
+    "hostedUrl": "https://jobs.lever.co/acme/lever-1",
+    "applyUrl": "https://jobs.lever.co/acme/lever-1/apply",
+    "description": "<p>Join our product design team.</p>",
+    "lists": [
+      {"text": "Requirements", "content": "<li>CAD and GD&amp;T experience</li><li>SolidWorks</li>"}
+    ],
+    "additional": "<p>Hybrid position.</p>"
+  },
+  {
+    "id": "lever-2",
+    "text": "Manufacturing Co-op",
+    "categories": {
+      "location": "Detroit, MI",
+      "department": "Operations",
+      "team": "Manufacturing"
+    },
+    "createdAt": 1767312000000,
+    "hostedUrl": "https://jobs.lever.co/acme/lever-2",
+    "applyUrl": "https://jobs.lever.co/acme/lever-2/apply"
+  }
+]

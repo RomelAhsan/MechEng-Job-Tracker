@@ -1,0 +1,17 @@
+{
+  "id": "sr-2",
+  "name": "Hardware Engineering Intern",
+  "applyUrl": "https://jobs.smartrecruiters.com/Acme/sr-2/apply",
+  "jobAd": {
+    "sections": {
+      "jobDescription": {
+        "title": "Job Description",
+        "text": "<p>Hardware engineering internship working on CNC and prototyping.</p>"
+      },
+      "qualifications": {
+        "title": "Requirements",
+        "text": "<ul><li>CAD and 3D printing</li></ul>"
+      }
+    }
+  }
+}

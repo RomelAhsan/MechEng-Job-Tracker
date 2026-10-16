@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobtracker"
+version = "0.1.0"
+description = "Waterloo Mechanical Engineering Co-op Job Tracker"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "pydantic>=2",
+    "pydantic-settings",
+    "httpx",
+    "feedparser",
+    "beautifulsoup4",
+    "lxml",
+    "pyyaml",
+    "typer",
+    "streamlit",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-httpx",
+    "respx",
+    "ruff",
+]
+
+[project.scripts]
+jobtracker = "jobtracker.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["jobtracker*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
