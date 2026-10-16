@@ -48,10 +48,20 @@ def test_load_companies_valid(tmp_path):
 
 
 def test_load_companies_seed_file():
+    # task 20b populated companies.yaml with the full design §16.3 target list.
     companies = load_companies("config/companies.yaml")
-    assert 3 <= len(companies) <= 5
-    ats_values = {c.ats for c in companies}
-    assert {"greenhouse", "lever", "ashby", "smartrecruiters"} <= ats_values
+    by_id = {c.id: c for c in companies}
+    # The full target list is large (not the small 3-5 verification seed).
+    assert len(companies) >= 50
+    # Verified public Greenhouse boards carry the real connector + token.
+    assert by_id["spacex"].ats == "greenhouse"
+    assert by_id["spacex"].board_token == "spacex"
+    assert by_id["archer-aviation"].board_token == "archer56"
+    # Companies whose public ATS was not confirmed route to the fallback stub
+    # with no fabricated token.
+    assert by_id["apple"].ats == "html"
+    assert by_id["apple"].board_token is None
+    assert by_id["apple"].priority == "low"
 
 
 def test_load_companies_missing_file():

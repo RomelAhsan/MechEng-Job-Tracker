@@ -23,6 +23,7 @@ class CompanyRepository:
             stmt = stmt.where(Company.enabled.is_(True))
         if active_only:
             stmt = stmt.where(Company.active.is_(True))
+        stmt = stmt.order_by(Company.id)
         return list(self.session.scalars(stmt))
 
     def add(self, company: Company) -> Company:
