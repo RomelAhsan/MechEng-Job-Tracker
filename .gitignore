@@ -1,4 +1,5 @@
 .venv/
+.worktrees/
 *.db
 output/
 __pycache__/
