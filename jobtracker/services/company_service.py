@@ -185,6 +185,24 @@ def disable(session: Session, company_id: str) -> Company:
     return company
 
 
+def update_settings(
+    session: Session,
+    company_id: str,
+    *,
+    priority: str | None = None,
+    check_interval_minutes: int | None = None,
+) -> Company:
+    """Edit a company's priority and/or check interval (dashboard controls)."""
+    company = _require(session, company_id)
+    if priority is not None:
+        company.priority = priority
+    if check_interval_minutes is not None:
+        company.check_interval_minutes = check_interval_minutes
+    company.updated_at = _now()
+    session.flush()
+    return company
+
+
 def remove(session: Session, company_id: str) -> Company:
     """Remove a company: mark inactive + disabled; historical jobs retained."""
     company = _require(session, company_id)
