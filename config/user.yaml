@@ -1,0 +1,38 @@
+# Single implicit user profile for Phase 1 (SPEC "USER PROFILE").
+# Editable in the dashboard; profile_version is bumped on change.
+user:
+  name: ""
+  email: ""
+  university: "University of Waterloo"
+  program: "Mechanical Engineering"
+  level: "undergraduate"
+  year: 1
+  expected_graduation_year: 2031
+  citizenship:
+    - "Canadian"
+  work_authorization:
+    - "Canada"
+  preferred_locations:
+    - "Ontario"
+    - "Canada"
+  acceptable_locations_with_sponsorship:
+    - "United States"
+  available_terms:
+    - "Spring"
+  preferred_duration_months: 4
+  minimum_duration_months: 4
+  maximum_duration_months: 4
+  interests:
+    - robotics
+    - manufacturing
+    - automotive
+    - aerospace
+    - product design
+    - thermal systems
+  skills:
+    - CAD
+    - SolidWorks
+    - MATLAB
+    - Python
+    - prototyping
+  profile_version: 1

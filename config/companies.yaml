@@ -1,0 +1,49 @@
+# Small verified seed of confirmed-public ATS boards (design §16.3).
+# One per supported connector so the pipeline and tests work immediately.
+# Each board_token/company identifier was verified against its live public
+# ATS endpoint; no tokens are fabricated. The full user-provided target list
+# is populated in a later feature (task 20b).
+companies:
+  - id: stripe
+    name: Stripe
+    ats: greenhouse
+    board_token: stripe
+    careers_url: https://stripe.com/jobs/search
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/stripe).
+
+  - id: leverdemo
+    name: Lever Demo
+    ats: lever
+    board_token: leverdemo
+    careers_url: https://jobs.lever.co/leverdemo
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified public Lever board (api.lever.co/v0/postings/leverdemo).
+
+  - id: ashby
+    name: Ashby
+    ats: ashby
+    board_token: Ashby
+    careers_url: https://jobs.ashbyhq.com/Ashby
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified public Ashby job board (api.ashbyhq.com/posting-api/job-board/Ashby).
+
+  - id: boschgroup
+    name: Bosch Group
+    ats: smartrecruiters
+    board_token: BoschGroup
+    careers_url: https://jobs.smartrecruiters.com/BoschGroup
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified public SmartRecruiters board (api.smartrecruiters.com/v1/companies/BoschGroup).
