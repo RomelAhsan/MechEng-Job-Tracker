@@ -69,6 +69,270 @@ companies:
     locations: []
     notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/lucidmotors); EV/automotive.
 
+  - id: astranis
+    name: Astranis
+    ats: greenhouse
+    board_token: astranis
+    careers_url: https://boards.greenhouse.io/astranis
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/astranis, ~189 postings); satellite/aerospace hardware.
+
+  - id: figure-ai
+    name: Figure
+    ats: greenhouse
+    board_token: figureai
+    careers_url: https://boards.greenhouse.io/figureai
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/figureai, ~103 postings); humanoid robotics hardware.
+
+  - id: nuro
+    name: Nuro
+    ats: greenhouse
+    board_token: nuro
+    careers_url: https://boards.greenhouse.io/nuro
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/nuro, ~94 postings); autonomous vehicle robotics.
+
+  - id: waymo
+    name: Waymo
+    ats: greenhouse
+    board_token: waymo
+    careers_url: https://careers.withwaymo.com
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/waymo, ~370 postings); autonomous driving hardware/robotics.
+
+  - id: kodiak-robotics
+    name: Kodiak Robotics
+    ats: greenhouse
+    board_token: kodiak
+    careers_url: https://job-boards.greenhouse.io/kodiak
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/kodiak, ~56 postings); autonomous trucking robotics.
+
+  - id: neuralink
+    name: Neuralink
+    ats: greenhouse
+    board_token: neuralink
+    careers_url: https://boards.greenhouse.io/neuralink
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/neuralink, ~80 postings); neurotech hardware/robotics, hires MechE interns.
+
+  - id: redwood-materials
+    name: Redwood Materials
+    ats: greenhouse
+    board_token: redwoodmaterials
+    careers_url: https://boards.greenhouse.io/redwoodmaterials
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/redwoodmaterials, ~126 postings); battery materials/manufacturing.
+
+  - id: divergent
+    name: Divergent Technologies
+    ats: greenhouse
+    board_token: divergent
+    careers_url: https://job-boards.greenhouse.io/divergent
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/divergent, ~138 postings); additive manufacturing for automotive/aerospace.
+
+  - id: vast
+    name: Vast
+    ats: greenhouse
+    board_token: vast
+    careers_url: https://boards.greenhouse.io/vast
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/vast, ~205 postings); space station hardware/aerospace.
+
+  - id: ursa-major
+    name: Ursa Major Technologies
+    ats: greenhouse
+    board_token: ursamajor
+    careers_url: https://www.ursamajor.com/careers
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/ursamajor, ~120 postings); rocket propulsion/aerospace.
+
+  - id: antora-energy
+    name: Antora Energy
+    ats: greenhouse
+    board_token: antora
+    careers_url: https://job-boards.greenhouse.io/antora
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/antora, ~41 postings); thermal energy storage hardware.
+
+  - id: muon-space
+    name: Muon Space
+    ats: greenhouse
+    board_token: muonspace
+    careers_url: https://job-boards.greenhouse.io/muonspace
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/muonspace, ~142 postings); satellite/aerospace hardware.
+
+  - id: planet-labs
+    name: Planet Labs
+    ats: greenhouse
+    board_token: planetlabs
+    careers_url: https://job-boards.greenhouse.io/planetlabs
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/planetlabs, ~123 postings); satellite imaging/aerospace hardware.
+
+  - id: markforged
+    name: Markforged
+    ats: greenhouse
+    board_token: markforged
+    careers_url: https://job-boards.greenhouse.io/markforged
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/markforged, ~4 postings); industrial additive manufacturing.
+
+  - id: chargepoint
+    name: ChargePoint
+    ats: greenhouse
+    board_token: chargepoint
+    careers_url: https://www.chargepoint.com/about/opportunities
+    enabled: true
+    priority: medium
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/chargepoint, ~44 postings); EV charging hardware.
+
+  - id: shield-ai
+    name: Shield AI
+    ats: lever
+    board_token: shieldai
+    careers_url: https://jobs.lever.co/shieldai
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Lever board (api.lever.co/v0/postings/shieldai, ~660 postings); defense/aerospace robotics. ITAR roles are filtered per-posting, not per-company.
+
+  - id: zoox
+    name: Zoox
+    ats: lever
+    board_token: zoox
+    careers_url: https://jobs.lever.co/zoox
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Lever board (api.lever.co/v0/postings/zoox, ~241 postings); autonomous vehicle robotics.
+
+  - id: dexterity
+    name: Dexterity
+    ats: lever
+    board_token: dexterity
+    careers_url: https://jobs.lever.co/dexterity
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Lever board (api.lever.co/v0/postings/dexterity, ~13 postings); warehouse robotics.
+
+  - id: bright-machines
+    name: Bright Machines
+    ats: lever
+    board_token: brightmachines
+    careers_url: https://jobs.lever.co/brightmachines
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Lever board (api.lever.co/v0/postings/brightmachines, ~17 postings); manufacturing automation/robotics.
+
+  - id: one-x
+    name: 1X Technologies
+    ats: ashby
+    board_token: 1x
+    careers_url: https://jobs.ashbyhq.com/1x
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/1x, ~102 postings); humanoid robotics hardware.
+
+  - id: saronic
+    name: Saronic Technologies
+    ats: ashby
+    board_token: saronic
+    careers_url: https://jobs.ashbyhq.com/saronic
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/saronic, ~269 postings); autonomous maritime/defense hardware. ITAR roles are filtered per-posting.
+
+  - id: gecko-robotics
+    name: Gecko Robotics
+    ats: ashby
+    board_token: gecko-robotics
+    careers_url: https://jobs.ashbyhq.com/gecko-robotics
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/gecko-robotics, ~21 postings); inspection robotics hardware.
+
+  - id: physical-intelligence
+    name: Physical Intelligence
+    ats: ashby
+    board_token: physicalintelligence
+    careers_url: https://jobs.ashbyhq.com/physicalintelligence
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/physicalintelligence, ~44 postings); robotics foundation models, hires manufacturing/MechE.
+
+  - id: standard-bots
+    name: Standard Bots
+    ats: ashby
+    board_token: standardbots
+    careers_url: https://jobs.ashbyhq.com/standardbots
+    enabled: true
+    priority: high
+    check_interval_minutes: 360
+    locations: []
+    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/standardbots, ~32 postings); industrial robot arms/robotics.
+
   # --- Big Tech & consumer hardware (public ATS unconfirmed -> fallback) ---
 
   - id: apple

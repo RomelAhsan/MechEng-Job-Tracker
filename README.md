@@ -120,6 +120,24 @@ two YAML files:
   `sitemap`/`json_ld`/`html`), optional `board_token`, `careers_url`, `enabled`,
   `priority` (`high`/`medium`/`low`), `check_interval_minutes`, `locations`, and
   `notes`. Unsupported ATS types route to a fallback stub (`requires_fallback`).
+
+  The seed list ships **29 companies with connectors verified live** against
+  their public ATS endpoint (a 200 returning real postings for that employer),
+  so only confirmed tokens are ever committed — no tokens are fabricated. These
+  span mechanical / hardware / robotics / aerospace / automotive / manufacturing
+  employers, including Greenhouse boards (SpaceX, Relativity Space, Rocket Lab,
+  Archer Aviation, Lucid Motors, Astranis, Figure, Nuro, Waymo, Kodiak Robotics,
+  Neuralink, Redwood Materials, Divergent, Vast, Ursa Major, Antora Energy, Muon
+  Space, Planet Labs, Markforged, ChargePoint), Lever boards (Shield AI, Zoox,
+  Dexterity, Bright Machines), and Ashby boards (1X Technologies, Saronic, Gecko
+  Robotics, Physical Intelligence, Standard Bots). The remaining entries are
+  well-known employers (Apple, Tesla, Boeing, Lockheed Martin, GM, Ford, and
+  several Canadian firms) whose public ATS could not be confirmed on a supported
+  connector; they stay as documented `ats: html` fallback stubs (visible in
+  Source Health, no fabricated tokens) until a connector is added. ITAR /
+  US-citizen-only roles are excluded per posting by the work-authorization
+  filter, so a defense-heavy employer is never dropped wholesale — only its
+  individual ITAR-restricted roles are hidden.
 - `config/user.yaml` — the single implicit Phase-1 user profile (citizenship,
   work authorization, available terms, preferred duration, interests, skills).
 

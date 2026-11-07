@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from jobtracker.config import ConfigError, load_companies, load_user_profile
+from jobtracker.connectors.registry import is_supported
 
 VALID_COMPANIES = """
 companies:
@@ -62,6 +63,21 @@ def test_load_companies_seed_file():
     assert by_id["apple"].ats == "html"
     assert by_id["apple"].board_token is None
     assert by_id["apple"].priority == "low"
+
+
+def test_seed_companies_supported_ats_have_tokens():
+    """Every seed entry wired to a real connector must carry a token.
+
+    Guards against future fabricated/blank tokens: a supported ATS
+    (greenhouse/lever/ashby/smartrecruiters) is only fetched when it has a
+    non-empty ``board_token``, so an empty one is a silent no-op.
+    """
+    companies = load_companies("config/companies.yaml")
+    supported = [c for c in companies if is_supported(c.ats)]
+    # FEAT-003 expanded verified-live coverage well beyond the original 5.
+    assert len(supported) >= 15
+    blank = [c.id for c in supported if not (c.board_token and c.board_token.strip())]
+    assert blank == [], f"supported-ATS companies with blank board_token: {blank}"
 
 
 def test_load_companies_missing_file():
