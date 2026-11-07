@@ -89,6 +89,27 @@ pages, each a thin view over the service layer:
 4. **Source Health** — last check times, run counts, errors, source status, the
    quarantine queue, and the accuracy report.
 
+### ITAR / US-citizen-only filtering
+
+The Phase-1 profile is a **Canadian citizen** who cannot work roles that require
+US citizenship for ITAR / export-control compliance. During screening, the
+work-authorization extractor (`jobtracker/extract/work_auth.py`) detects
+ITAR / export-control / `U.S. Person` / US-citizen-only phrasing (for example
+"requires ITAR compliance", "due to export control regulations", "must be a U.S.
+citizen", "U.S. citizens or permanent residents only") and records the exact
+matched phrase as evidence, resolving the job to the `ineligible_itar`
+eligibility status. This barrier takes precedence over any sponsorship-available
+phrasing.
+
+Jobs with `ineligible_itar` are **filtered out of every dashboard view
+entirely** — not merely flagged. The exclusion is applied centrally in the
+read-side `dashboard_service`, so it holds for both *Relevant For Me* and *All
+Internships*, including the "Show removed (archive)" view, and it cannot be
+defeated by the eligibility-status filter widget (`ineligible_itar` is never a
+selectable option). Genuinely ambiguous roles (missing or unclear work-auth
+information) remain visible as `possibly_eligible_unknown`; only explicit
+ITAR / US-citizen-only barriers are excluded.
+
 ## Configuration
 
 Configuration comes from environment variables / `.env` (see `.env.example`) and

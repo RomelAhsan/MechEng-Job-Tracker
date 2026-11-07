@@ -28,6 +28,10 @@ from jobtracker.schemas.job import VisaSponsorship
 ELIGIBLE = "eligible"
 POSSIBLY_ELIGIBLE_UNKNOWN = "possibly_eligible_unknown"
 LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED = "likely_ineligible_sponsorship_required"
+#: Hard barrier for a Canadian citizen: ITAR / export-control / US-person /
+#: US-citizen-only requirement. Jobs with this status are filtered out of the
+#: dashboard ENTIRELY (never merely flagged).
+INELIGIBLE_ITAR = "ineligible_itar"
 
 
 def _quote(match: re.Match[str]) -> str:
@@ -83,6 +87,26 @@ _FOREIGN_PR_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ITAR / export-control / US-person / US-citizen-only barrier. Any match is a
+# hard ineligibility for a Canadian citizen and takes precedence over the
+# sponsorship-based eligibility derivation. Tolerates U.S./US/United States
+# variants and matches the explicit US-citizen/US-person requirement phrasings
+# so those resolve to INELIGIBLE_ITAR rather than only a sponsorship status.
+_US = r"(?:u\.?\s*s\.?|united states)"
+_ITAR_RE = re.compile(
+    r"itar(?:[-\s]*compliance|[-\s]*compliant)?"
+    r"|export[-\s]*control(?:led|s)?(?:\s+regulations?)?"
+    r"|\bEAR\b"
+    rf"|{_US}\.?\s*persons?\b"
+    rf"|(?:must be|require[sd]?|are)\s+(?:a\s+)?{_US}\.?\s*persons?\b"
+    rf"|(?:must be|require[sd]?|only)\s+(?:a\s+)?{_US}\s*"
+    r"(?:citizen|permanent resident)"
+    rf"|{_US}\s+citizen(?:ship)?\s+(?:is\s+)?required"
+    rf"|requires?\s+{_US}\s+citizenship"
+    rf"|{_US}\s+citizens?\s+(?:or\s+permanent\s+residents?\s+)?only",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class WorkAuthExtraction:
@@ -125,6 +149,7 @@ def extract_work_auth(
     us_citizen = _US_CITIZEN_RE.search(text)
     ca_accepted = _CA_ACCEPTED_RE.search(text)
     foreign_pr = _FOREIGN_PR_RE.search(text)
+    itar = _ITAR_RE.search(text)
 
     # Sponsorship signal (negative wins over positive when both appear).
     if no_sponsor is not None:
@@ -139,6 +164,18 @@ def extract_work_auth(
         result.visa_sponsorship = VisaSponsorship.UNKNOWN
         result.sponsorship_confidence = 0.0
         result.sponsorship_evidence = ""
+
+    # ITAR / export-control / US-citizen-only is a HARD barrier that takes
+    # precedence over the sponsorship-based eligibility derivation below.
+    if itar is not None:
+        quote = _quote(itar)
+        result.citizenship_requirement = quote
+        result.work_authorization_requirement = quote
+        if not result.sponsorship_evidence:
+            result.sponsorship_evidence = quote
+        result.eligibility_status = INELIGIBLE_ITAR
+        result.reasons.append(f"ITAR/US-citizen-only requirement: {quote}")
+        return result
 
     if us_citizen is not None:
         result.citizenship_requirement = _quote(us_citizen)

@@ -18,9 +18,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.db.models import Company, Job, QuarantineItem, SourceHealth
+from jobtracker.extract.work_auth import INELIGIBLE_ITAR
 
 #: Classifications surfaced on the "Relevant For Me" page.
 RELEVANT_CLASSIFICATIONS: tuple[str, ...] = ("strong_match", "possible_match")
+
+#: Eligibility statuses that are filtered out of EVERY dashboard view entirely
+#: (not merely flagged). A Canadian citizen cannot work ITAR / US-citizen-only
+#: roles, so they are excluded regardless of ``include_removed`` and regardless
+#: of the eligibility-status filter widget selection.
+HARD_EXCLUDED_ELIGIBILITY: tuple[str, ...] = (INELIGIBLE_ITAR,)
 
 #: A job first seen within this window is flagged with a "new" badge.
 DEFAULT_NEW_WINDOW = timedelta(days=3)
@@ -256,6 +263,13 @@ def list_jobs(
     stmt = select(Job, Company.name).join(Company, Company.id == Job.company_id)
     if not filters.include_removed:
         stmt = stmt.where(Job.status == "active")
+    # Hard ITAR / US-citizen-only exclusion: applied for every view, including
+    # the archive (include_removed) and independent of the eligibility_statuses
+    # filter widget, so these jobs can never be surfaced.
+    stmt = stmt.where(
+        Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
+        | Job.eligibility_status.is_(None)
+    )
 
     views = [
         _to_view(job, name, now=now, new_window=new_window)
@@ -304,7 +318,7 @@ def filter_options(session: Session) -> FilterOptions:
             seen["countries"].add(job.country)
         seen["remote_statuses"].add(job.remote_status or "unknown")
         seen["employment_types"].add(job.employment_type or "unknown")
-        if job.eligibility_status:
+        if job.eligibility_status and job.eligibility_status not in HARD_EXCLUDED_ELIGIBILITY:
             seen["eligibility_statuses"].add(job.eligibility_status)
         seen["sponsorship_statuses"].add(job.visa_sponsorship or "unknown")
 

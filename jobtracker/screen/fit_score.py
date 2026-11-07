@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from jobtracker.extract.work_auth import (
     ELIGIBLE,
+    INELIGIBLE_ITAR,
     LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED,
     POSSIBLY_ELIGIBLE_UNKNOWN,
 )
@@ -162,6 +163,9 @@ def _score_citizenship(job: CanonicalJob, result: FitScoreResult) -> tuple[int, 
     if status == ELIGIBLE:
         result.matched.append("Eligible under citizenship/sponsorship rules.")
         return WEIGHT_CITIZENSHIP, True
+    if status == INELIGIBLE_ITAR:
+        result.concerns.append("Ineligible: ITAR / US-citizen-only role.")
+        return 0, False
     if status == LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED:
         result.concerns.append("Likely ineligible: sponsorship required/unavailable.")
         return 0, False
