@@ -87,25 +87,60 @@ _FOREIGN_PR_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ITAR / export-control / US-person / US-citizen-only barrier. Any match is a
+# ITAR / export-control / US-person / US-citizen-only barrier. A match is a
 # hard ineligibility for a Canadian citizen and takes precedence over the
 # sponsorship-based eligibility derivation. Tolerates U.S./US/United States
-# variants and matches the explicit US-citizen/US-person requirement phrasings
-# so those resolve to INELIGIBLE_ITAR rather than only a sponsorship status.
+# variants.
 _US = r"(?:u\.?\s*s\.?|united states)"
-_ITAR_RE = re.compile(
-    r"itar(?:[-\s]*compliance|[-\s]*compliant)?"
-    r"|export[-\s]*control(?:led|s)?(?:\s+regulations?)?"
-    r"|\bEAR\b"
-    rf"|{_US}\.?\s*persons?\b"
-    rf"|(?:must be|require[sd]?|are)\s+(?:a\s+)?{_US}\.?\s*persons?\b"
+
+# Explicit-barrier arms: these phrasings ARE the eligibility barrier on their
+# own (a Canadian citizen cannot satisfy them), so they match unconditionally
+# and always resolve to INELIGIBLE_ITAR. Kept exactly as reviewed.
+_ITAR_BARRIER_RE = re.compile(
+    rf"(?:must be|require[sd]?|are)\s+(?:a\s+)?{_US}\.?\s*persons?\b"
     rf"|(?:must be|require[sd]?|only)\s+(?:a\s+)?{_US}\s*"
     r"(?:citizen|permanent resident)"
     rf"|{_US}\s+citizen(?:ship)?\s+(?:is\s+)?required"
     rf"|requires?\s+{_US}\s+citizenship"
+    rf"|{_US}\s+persons?\s+only"
     rf"|{_US}\s+citizens?\s+(?:or\s+permanent\s+residents?\s+)?only",
     re.IGNORECASE,
 )
+
+# Bare-keyword arms: ``itar``, ``export control``, ``\bEAR\b`` and a bare
+# ``U.S. person`` mention name a TOPIC/SKILL and are NOT barriers on their own
+# ("ITAR experience a plus", "export control training provided"). They only
+# indicate an eligibility barrier when framed as a requirement, so they are
+# gated behind nearby barrier-framing wording. Without that framing the role
+# falls through to the normal possibly_eligible_unknown path (never hidden).
+_ITAR_KEYWORD = (
+    r"itar(?:[-\s]*compliance|[-\s]*compliant)?"
+    r"|export[-\s]*control(?:led|s)?(?:\s+regulations?)?"
+    r"|\bEAR\b"
+    rf"|{_US}\.?\s*persons?\b"
+)
+# Barrier-framing cues that must appear next to a bare keyword for it to count
+# as a genuine eligibility barrier rather than a topic/skill mention.
+_BARRIER_CUE = (
+    r"require[sd]?|must|only|eligib(?:le|ility)|due to|restricted to"
+    r"|limited to|authorized to access|clearance required"
+)
+# Keyword followed by framing, OR framing followed by keyword, within a short
+# window so unrelated sentences do not bridge a false match.
+_ITAR_KEYWORD_RE = re.compile(
+    rf"(?:{_ITAR_KEYWORD})[^.?!\n]{{0,60}}\b(?:{_BARRIER_CUE})\b"
+    rf"|\b(?:{_BARRIER_CUE})\b[^.?!\n]{{0,60}}(?:{_ITAR_KEYWORD})",
+    re.IGNORECASE,
+)
+
+
+def _match_itar(text: str) -> re.Match[str] | None:
+    """Return an ITAR/US-citizen-only barrier match, or None.
+
+    Explicit-barrier phrasings match on their own; bare topic/skill keywords
+    only match when framed as a requirement so mere mentions stay visible.
+    """
+    return _ITAR_BARRIER_RE.search(text) or _ITAR_KEYWORD_RE.search(text)
 
 
 @dataclass
@@ -149,7 +184,7 @@ def extract_work_auth(
     us_citizen = _US_CITIZEN_RE.search(text)
     ca_accepted = _CA_ACCEPTED_RE.search(text)
     foreign_pr = _FOREIGN_PR_RE.search(text)
-    itar = _ITAR_RE.search(text)
+    itar = _match_itar(text)
 
     # Sponsorship signal (negative wins over positive when both appear).
     if no_sponsor is not None:

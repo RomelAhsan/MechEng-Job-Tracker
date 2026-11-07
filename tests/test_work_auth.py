@@ -99,6 +99,81 @@ def test_normal_roles_not_itar_excluded() -> None:
     assert missing_info.eligibility_status != INELIGIBLE_ITAR
 
 
+def test_itar_skill_mention_not_excluded() -> None:
+    # A topic/skill mention of ITAR is NOT a barrier; the role stays visible.
+    result = extract_work_auth(
+        "Experience with ITAR-regulated hardware is a plus.",
+        country="United States",
+    )
+    assert result.eligibility_status == POSSIBLY_ELIGIBLE_UNKNOWN
+    assert result.eligibility_status != INELIGIBLE_ITAR
+
+
+def test_export_control_topic_mention_not_excluded() -> None:
+    result = extract_work_auth(
+        "Familiarity with export control compliance processes preferred.",
+        country="United States",
+    )
+    assert result.eligibility_status == POSSIBLY_ELIGIBLE_UNKNOWN
+    assert result.eligibility_status != INELIGIBLE_ITAR
+
+
+def test_ear_training_mention_not_excluded() -> None:
+    result = extract_work_auth(
+        "EAR training will be provided.", country="United States"
+    )
+    assert result.eligibility_status == POSSIBLY_ELIGIBLE_UNKNOWN
+    assert result.eligibility_status != INELIGIBLE_ITAR
+
+
+def test_sponsorship_with_itar_skill_mention_stays_visible() -> None:
+    # Sponsorship offered + a mere ITAR skill mention -> NOT excluded; the
+    # sponsorship-based derivation applies and the role is eligible.
+    result = extract_work_auth(
+        "Visa sponsorship available. ITAR experience a plus.",
+        country="United States",
+    )
+    assert result.eligibility_status != INELIGIBLE_ITAR
+    assert result.visa_sponsorship == VisaSponsorship.PROVIDED
+    assert result.eligibility_status == ELIGIBLE
+
+
+def test_inclusive_us_persons_mention_not_excluded() -> None:
+    # Inclusive, non-barrier framing of "US persons" must stay visible.
+    result = extract_work_auth(
+        "Position is open to US persons (citizens, permanent residents, "
+        "asylees, and refugees).",
+        country="United States",
+    )
+    assert result.eligibility_status != INELIGIBLE_ITAR
+
+
+def test_itar_framed_as_requirement_is_excluded() -> None:
+    # A bare keyword DOES become a barrier when framed as a requirement.
+    result = extract_work_auth(
+        "Due to ITAR, applicants must be authorized to access controlled data.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_us_persons_only_barrier_still_excluded() -> None:
+    result = extract_work_auth(
+        "This role is restricted to U.S. persons only.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_barrier_wins_over_sponsorship_phrase() -> None:
+    # A genuine barrier is not rescued by a sponsorship-available phrase.
+    result = extract_work_auth(
+        "Visa sponsorship is available. Applicants must be U.S. citizens.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
 def test_evidence_present_or_unknown() -> None:
     # When sponsorship is unknown, evidence is empty (unknown is first-class).
     unknown = extract_work_auth("A generic description.", country="Canada")
