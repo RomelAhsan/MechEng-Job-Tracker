@@ -57,6 +57,62 @@ def init_db() -> None:
     typer.echo("Database is at Alembic head.")
 
 
+@app.command("create-user")
+def create_user(
+    email: str = typer.Option(
+        ...,
+        "--email",
+        help="Account email; notifications are sent here.",
+        envvar="JOBTRACKER_USER_EMAIL",
+    ),
+    password: str = typer.Option(
+        ...,
+        "--password",
+        help="Account password (read from JOBTRACKER_USER_PASSWORD if unset).",
+        envvar="JOBTRACKER_USER_PASSWORD",
+    ),
+    display_name: str | None = typer.Option(
+        None, "--display-name", help="Optional display name."
+    ),
+) -> None:
+    """Create a user account if one does not already exist (idempotent).
+
+    Unattended setups (scheduled CI runs, hosted deployments) have nobody to
+    fill in the dashboard registration form, yet notifications are per-user --
+    with no account the notifier has no recipient and silently sends nothing.
+    This command bootstraps that account and is a no-op when the email already
+    exists, so it is safe to run on every scheduled poll.
+    """
+    from jobtracker.services import auth_service
+
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        raise typer.BadParameter("--email must not be empty.")
+    if not password:
+        raise typer.BadParameter("--password must not be empty.")
+
+    with _session_scope() as session:
+        if auth_service.get_by_email(session, normalized) is not None:
+            typer.echo(f"User already exists: {normalized} (no changes made).")
+            return
+
+        try:
+            from jobtracker.config.user_loader import load_user_profile
+
+            seed = load_user_profile(get_settings().user_file).model_dump()
+        except Exception:  # noqa: BLE001 - seeding is best-effort, never blocks.
+            seed = {}
+
+        user = auth_service.register(
+            session,
+            normalized,
+            password,
+            display_name=display_name or None,
+            seed_profile=seed,
+        )
+        typer.echo(f"Created user {normalized} (role={user.role}).")
+
+
 @app.command("add-company")
 def add_company(
     url: str = typer.Argument(..., help="Careers URL to detect and add"),
