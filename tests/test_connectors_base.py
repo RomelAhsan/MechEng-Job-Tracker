@@ -114,8 +114,10 @@ def test_detect_ats_unknown_falls_back_to_html():
 def test_get_connector_supported_vs_fallback():
     client = _client()
     assert type(get_connector("greenhouse", client)).__name__ == "GreenhouseConnector"
-    assert isinstance(get_connector("workable", client), FallbackConnector)
-    assert isinstance(get_connector("rss", client), FallbackConnector)
+    # workable/rss now have real connectors; only html routes to the fallback.
+    assert type(get_connector("workable", client)).__name__ == "WorkableConnector"
+    assert type(get_connector("rss", client)).__name__ == "RssConnector"
+    assert isinstance(get_connector("html", client), FallbackConnector)
     assert is_supported("lever") is True
     assert is_supported("html") is False
     client.close()

@@ -66,18 +66,29 @@ def test_load_companies_seed_file():
 
 
 def test_seed_companies_supported_ats_have_tokens():
-    """Every seed entry wired to a real connector must carry a token.
+    """Every seed entry wired to a real connector must carry an identifier.
 
-    Guards against future fabricated/blank tokens: a supported ATS
-    (greenhouse/lever/ashby/smartrecruiters) is only fetched when it has a
-    non-empty ``board_token``, so an empty one is a silent no-op.
+    Guards against future fabricated/blank tokens: a token-based ATS
+    (greenhouse/lever/ashby/smartrecruiters/workable) is only fetched when it
+    has a non-empty ``board_token``, so an empty one is a silent no-op. Workday
+    is addressed by a verified tenant/data_center/site triple (or a
+    ``myworkdayjobs`` ``careers_url``) instead of a board_token.
     """
     companies = load_companies("config/companies.yaml")
     supported = [c for c in companies if is_supported(c.ats)]
-    # FEAT-003 expanded verified-live coverage well beyond the original 5.
+    # FEAT-002/003 expanded verified-live coverage well beyond the original 5.
     assert len(supported) >= 15
-    blank = [c.id for c in supported if not (c.board_token and c.board_token.strip())]
-    assert blank == [], f"supported-ATS companies with blank board_token: {blank}"
+
+    missing: list[str] = []
+    for c in supported:
+        if c.ats == "workday":
+            has_triple = bool(c.tenant and c.data_center and c.site)
+            has_url = bool(c.careers_url and "myworkdayjobs.com" in c.careers_url)
+            if not (has_triple or has_url):
+                missing.append(c.id)
+        elif not (c.board_token and c.board_token.strip()):
+            missing.append(c.id)
+    assert missing == [], f"supported-ATS companies missing an identifier: {missing}"
 
 
 def test_load_companies_missing_file():

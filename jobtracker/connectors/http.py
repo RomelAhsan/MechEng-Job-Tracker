@@ -84,15 +84,38 @@ class HttpClient:
         response = self.request("GET", url, params=params)
         return response.json()
 
+    def get_text(self, url: str, *, params: dict | None = None) -> str:
+        """GET ``url`` with retry/backoff and return the response body text."""
+        response = self.request("GET", url, params=params)
+        return response.text
+
+    def post_json(
+        self, url: str, json_body: dict, *, params: dict | None = None
+    ) -> object:
+        """POST a JSON body to ``url`` with retry/backoff; return parsed JSON.
+
+        Shares the same per-host rate limiting + retry/backoff + no-redirect
+        policy as :meth:`get_json`. Workday's CXS endpoint requires POST.
+        """
+        response = self.request("POST", url, params=params, json_body=json_body)
+        return response.json()
+
     def request(
-        self, method: str, url: str, *, params: dict | None = None
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict | None = None,
+        json_body: dict | None = None,
     ) -> httpx.Response:
         """Issue a rate-limited request, retrying transient failures."""
         host = urlsplit(url).netloc
 
         def _do() -> httpx.Response:
             self._rate_limiter.acquire(host)
-            response = self._client.request(method, url, params=params)
+            response = self._client.request(
+                method, url, params=params, json=json_body
+            )
             if response.status_code in _RETRYABLE_STATUS:
                 response.raise_for_status()
             return response

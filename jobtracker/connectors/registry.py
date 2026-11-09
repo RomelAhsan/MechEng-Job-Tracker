@@ -9,10 +9,13 @@ from urllib.parse import urlsplit
 from jobtracker.connectors.ashby import AshbyConnector
 from jobtracker.connectors.base import Connector
 from jobtracker.connectors.fallback import FallbackConnector
+from jobtracker.connectors.feed import JsonLdConnector, RssConnector, SitemapConnector
 from jobtracker.connectors.greenhouse import GreenhouseConnector
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.lever import LeverConnector
 from jobtracker.connectors.smartrecruiters import SmartRecruitersConnector
+from jobtracker.connectors.workable import WorkableConnector, parse_workable_account
+from jobtracker.connectors.workday import WorkdayConnector, parse_workday_url
 from jobtracker.schemas.company import ATSType
 
 # ats value -> connector class (fallback-eligible types are not listed here).
@@ -21,6 +24,11 @@ _SUPPORTED: dict[str, type[Connector]] = {
     ATSType.LEVER.value: LeverConnector,
     ATSType.ASHBY.value: AshbyConnector,
     ATSType.SMARTRECRUITERS.value: SmartRecruitersConnector,
+    ATSType.WORKDAY.value: WorkdayConnector,
+    ATSType.WORKABLE.value: WorkableConnector,
+    ATSType.RSS.value: RssConnector,
+    ATSType.SITEMAP.value: SitemapConnector,
+    ATSType.JSON_LD.value: JsonLdConnector,
 }
 
 
@@ -50,6 +58,8 @@ _GREENHOUSE_HOSTS = ("greenhouse.io", "boards.greenhouse.io", "boards-api.greenh
 _LEVER_HOSTS = ("lever.co", "jobs.lever.co", "api.lever.co")
 _ASHBY_HOSTS = ("ashbyhq.com", "jobs.ashbyhq.com", "api.ashbyhq.com")
 _SMARTRECRUITERS_HOSTS = ("smartrecruiters.com",)
+_WORKDAY_HOSTS = ("myworkdayjobs.com",)
+_WORKABLE_HOSTS = ("workable.com",)
 
 
 def _first_path_segment(path: str) -> str | None:
@@ -98,5 +108,16 @@ def detect_ats(url: str) -> DetectedATS:
         return DetectedATS(ATSType.ASHBY.value, _first_path_segment(path))
     if any(h in host for h in _SMARTRECRUITERS_HOSTS):
         return DetectedATS(ATSType.SMARTRECRUITERS.value, _smartrecruiters_token(parts))
+    if any(h in host for h in _WORKDAY_HOSTS):
+        coords = parse_workday_url(url if "//" in url else f"https://{url}")
+        token = f"{coords.tenant}/{coords.data_center}/{coords.site}" if coords else None
+        return DetectedATS(ATSType.WORKDAY.value, token)
+    if any(h in host for h in _WORKABLE_HOSTS):
+        account = parse_workable_account(url if "//" in url else f"https://{url}")
+        return DetectedATS(ATSType.WORKABLE.value, account)
+    if host.endswith(".rss") or path.endswith(".rss") or "/rss" in path or "/feed" in path:
+        return DetectedATS(ATSType.RSS.value, url)
+    if "sitemap" in path and path.endswith(".xml"):
+        return DetectedATS(ATSType.SITEMAP.value, url)
 
     return DetectedATS(ATSType.HTML.value, None)

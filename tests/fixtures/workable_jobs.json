@@ -1,0 +1,23 @@
+{
+  "total": 2,
+  "results": [
+    {
+      "shortcode": "ABC123",
+      "title": "Robotics Hardware Engineer",
+      "location": {"city": "Toronto", "region": "ON", "country": "Canada"},
+      "url": "https://apply.workable.com/acme/j/ABC123/",
+      "department": "Engineering",
+      "type": "Full-time",
+      "published_on": "2026-11-01"
+    },
+    {
+      "shortcode": "DEF456",
+      "title": "Mechatronics Technician",
+      "location": {"city": "Austin", "region": "TX", "country": "United States"},
+      "url": "https://apply.workable.com/acme/j/DEF456/",
+      "department": "Operations",
+      "type": "Full-time",
+      "published_on": "2026-10-28"
+    }
+  ]
+}

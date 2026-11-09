@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Acme Careers</title>
+    <link>https://careers.acme.example</link>
+    <description>Open roles at Acme</description>
+    <item>
+      <title>Senior Mechanical Engineer</title>
+      <link>https://careers.acme.example/jobs/101</link>
+      <guid>https://careers.acme.example/jobs/101</guid>
+      <description>Lead mechanical design for new hardware products.</description>
+      <pubDate>Mon, 03 Nov 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Manufacturing Intern</title>
+      <link>https://careers.acme.example/jobs/102</link>
+      <guid>https://careers.acme.example/jobs/102</guid>
+      <description>Support production engineering projects.</description>
+      <pubDate>Tue, 28 Oct 2026 09:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

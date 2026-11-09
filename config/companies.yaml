@@ -8,6 +8,13 @@
 # `ats: html` and `enabled: true` so they appear in Source Health as needing a
 # connector in a later phase; NO board tokens are fabricated for them.
 #
+# Supported connectors: greenhouse, lever, ashby, smartrecruiters, workday,
+# workable, rss, sitemap, json_ld. Workday entries carry a verified
+# tenant/data_center/site triple (the public CXS endpoint
+# {tenant}.{data_center}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs was
+# probed live and returned real postings). Auth-walled Workday boards (e.g.
+# Rivian returns HTTP 401) MUST stay `ats: html` stubs — we never bypass auth.
+#
 # Priority heuristic (design §16.3): Canadian employers + strong mechanical /
 # robotics / automotive / aerospace firms -> high; most others -> medium; any
 # routed to the fallback stub -> low until a connector exists. The user can edit.
@@ -382,12 +389,16 @@ companies:
 
   - id: nvidia
     name: NVIDIA
-    ats: html
-    careers_url: https://www.nvidia.com/en-us/about-nvidia/careers/
+    ats: workday
+    tenant: nvidia
+    data_center: wd5
+    site: NVIDIAExternalCareerSite
+    careers_url: https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations: []
-    notes: Public supported ATS not confirmed (Workday-based). Fallback until a connector exists.
+    notes: Verified live Workday board (nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs, ~2000 postings); GPU/semiconductor/robotics hardware.
 
   - id: intel
     name: Intel
@@ -499,7 +510,7 @@ companies:
     enabled: true
     priority: low
     locations: []
-    notes: Public supported ATS not confirmed (greenhouse/lever/ashby tokens not verified). Fallback until a connector exists.
+    notes: Rivian's Workday board (rivian.wd1.myworkdayjobs.com) returns HTTP 401 (auth-walled); per CORE RULE #1 we never bypass auth, so this stays an html stub.
 
   - id: general-motors
     name: General Motors
@@ -651,12 +662,16 @@ companies:
 
   - id: kla
     name: KLA Corporation
-    ats: html
-    careers_url: https://careers.kla.com
+    ats: workday
+    tenant: kla
+    data_center: wd1
+    site: Search
+    careers_url: https://kla.wd1.myworkdayjobs.com/Search
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
+    notes: Verified live Workday board (kla.wd1.myworkdayjobs.com/wday/cxs/kla/Search/jobs, ~1153 postings); semiconductor process-control equipment.
 
   - id: texas-instruments
     name: Texas Instruments
@@ -678,21 +693,29 @@ companies:
 
   - id: stryker
     name: Stryker
-    ats: html
-    careers_url: https://careers.stryker.com
+    ats: workday
+    tenant: stryker
+    data_center: wd1
+    site: StrykerCareers
+    careers_url: https://stryker.wd1.myworkdayjobs.com/StrykerCareers
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
+    notes: Verified live Workday board (stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs, ~1457 postings); medical-device manufacturing.
 
   - id: medtronic
     name: Medtronic
-    ats: html
-    careers_url: https://jobs.medtronic.com
+    ats: workday
+    tenant: medtronic
+    data_center: wd1
+    site: MedtronicCareers
+    careers_url: https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
+    notes: Verified live Workday board (medtronic.wd1.myworkdayjobs.com/wday/cxs/medtronic/MedtronicCareers/jobs, ~989 postings); medical-device manufacturing.
 
   - id: intuitive-surgical
     name: Intuitive Surgical
@@ -717,13 +740,17 @@ companies:
 
   - id: magna-international
     name: Magna International
-    ats: html
-    careers_url: https://www.magna.com/careers
+    ats: workday
+    tenant: magna
+    data_center: wd3
+    site: Magna
+    careers_url: https://magna.wd3.myworkdayjobs.com/Magna
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations:
       - Canada
-    notes: Canadian automotive; SmartRecruiters token not verified (own careers portal). Fallback until a connector exists.
+    notes: Verified live Workday board (magna.wd3.myworkdayjobs.com/wday/cxs/magna/Magna/jobs, ~1383 postings); Canadian automotive manufacturing.
 
   - id: pratt-whitney-canada
     name: Pratt & Whitney Canada
@@ -767,13 +794,17 @@ companies:
 
   - id: enbridge
     name: Enbridge
-    ats: html
-    careers_url: https://careers.enbridge.com
+    ats: workday
+    tenant: enbridge
+    data_center: wd3
+    site: enbridge_careers
+    careers_url: https://enbridge.wd3.myworkdayjobs.com/enbridge_careers
     enabled: true
-    priority: low
+    priority: high
+    check_interval_minutes: 60
     locations:
       - Canada
-    notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
+    notes: Verified live Workday board (enbridge.wd3.myworkdayjobs.com/wday/cxs/enbridge/enbridge_careers/jobs, ~68 postings); Canadian energy.
 
   - id: imperial-oil
     name: Imperial Oil
