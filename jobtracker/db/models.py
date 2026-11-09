@@ -167,45 +167,71 @@ class QuarantineItem(Base):
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-# --- Scaffolds: nullable, unused, not wired to auth (design 3.6) ---
+# --- Phase 2 multi-user accounts and personalization (design 3.6) ---
 
 
 class User(Base):
-    """Multi-user scaffold (unused in Phase 1)."""
+    """A registered dashboard user (Phase 2).
+
+    ``role`` is ``admin`` or ``member``; the first registered user becomes the
+    admin (owner of the shared company registry). Passwords are bcrypt-hashed
+    and stored only in ``password_hash`` (never plaintext).
+    """
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SavedJob(Base):
-    """Saved-job scaffold (unused in Phase 1)."""
+    """A job hearted/saved by a user (Phase 2)."""
 
     __tablename__ = "saved_jobs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_saved_jobs_user_job"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ApplicationStatus(Base):
-    """Application-status scaffold (unused in Phase 1)."""
+    """A user's application-pipeline state for one job (Phase 2).
+
+    ``status`` is one of saved|researching|applying|submitted|interviewing|
+    offer|rejected|closed.
+    """
 
     __tablename__ = "application_status"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_application_status_user_job"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserProfile(Base):
-    """User-profile scaffold with profile_version (unused in Phase 1)."""
+    """Per-user profile JSON + version (Phase 2).
+
+    ``data`` holds the serialized :class:`jobtracker.schemas.user_profile.UserProfile`.
+    ``profile_version`` is bumped on every edit so Phase 3 AI caches invalidate.
+    ``notification_prefs`` holds per-user notification settings (channel, email,
+    opt-ins) used by FEAT-005 email subscriptions.
+    """
 
     __tablename__ = "user_profiles"
 
@@ -213,17 +239,162 @@ class UserProfile(Base):
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     data: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    notification_prefs: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SavedFilter(Base):
+    """A user's named saved filter / subscription (Phase 2 -> FEAT-005).
+
+    Stores the serialized :class:`JobFilters` as ``filter_json``. When
+    ``notify`` is set, FEAT-005 emails matching new postings via ``channel``.
+    """
+
+    __tablename__ = "saved_filters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    filter_json: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    notify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class NotificationLog(Base):
-    """Notification log scaffold (Phase 5, unused in Phase 1)."""
+    """Delivery + dedup history for notifications (FEAT-005).
+
+    One row per email actually sent (or written to the outbox). The
+    ``(user_id, job_id, channel, rule)`` tuple is the dedup key: the notifier
+    never emails the same job for the same rule to the same user twice. ``rule``
+    is the SPEC notification rule that fired (e.g. ``strong_match``,
+    ``source_failure``), and for source-level notifications ``job_id`` is NULL
+    and ``company_id`` identifies the affected source. ``to_email`` records the
+    destination for history, and ``status`` is ``sent`` or ``outbox``.
+    """
 
     __tablename__ = "notification_log"
+    __table_args__ = (
+        Index("ix_notification_log_user", "user_id"),
+        Index("ix_notification_log_dedup", "user_id", "job_id", "channel", "rule"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id"), nullable=True
+    )
     channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    rule: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    to_email: Mapped[str | None] = mapped_column(String, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# --- Phase 3 AI relevance engine (design 3.7) ---
+
+
+class AiAnalysisCache(Base):
+    """Cached AI relevance analysis for a job, keyed for invalidation (Phase 3).
+
+    The cache key is ``(job_id, description_hash, profile_version)`` so a cached
+    row is reused only while the job description AND the user's profile are
+    unchanged; editing the profile (which bumps ``profile_version``) or a
+    changed description invalidates it and triggers a fresh analysis. ``result``
+    holds the parsed strict-JSON SPEC fields; ``confidence`` mirrors the parsed
+    confidence for quick ranking. Token usage is stored for cost visibility.
+    ``overridden`` marks a manual override of the AI classification.
+    """
+
+    __tablename__ = "ai_analysis_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "description_hash",
+            "profile_version",
+            name="uq_ai_cache_key",
+        ),
+        Index("ix_ai_cache_job", "job_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("jobs.job_id"), nullable=True
+    )
+    description_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# --- Phase 4 Resume Studio (design 3.8) ---
+
+
+class MasterResume(Base):
+    """A user's uploaded master resume (Phase 4, SPEC CORE RULE #7/#8).
+
+    The ORIGINAL uploaded file is preserved untouched: its bytes are stored
+    base64-encoded in ``original_base64`` (a portable Text column, so the SQLite
+    dev DB stays PostgreSQL-compatible and no native BLOB handling is needed).
+    ``parsed_sections`` holds the structured SPEC sections extracted by
+    :mod:`jobtracker.resume.parser`; ``raw_text`` is the extracted plain text.
+    Tailored resumes are always generated from this grounded structure, never
+    from invented content.
+    """
+
+    __tablename__ = "master_resumes"
+    __table_args__ = (Index("ix_master_resumes_user", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    original_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_sections: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GeneratedResume(Base):
+    """A tailored resume generated for one saved job (Phase 4).
+
+    Stores the Markdown source, the structured JSON sections, and the ATS PDF
+    (base64 in a portable Text column). ``change_log`` records what was
+    reordered/emphasized and ``missing_keywords`` lists job keywords the user
+    lacks evidence for (suggestions only, never auto-inserted). Every stored
+    draft has passed the deterministic ``verify_claims`` fact-preservation gate.
+    """
+
+    __tablename__ = "generated_resumes"
+    __table_args__ = (
+        Index("ix_generated_resumes_user", "user_id"),
+        Index("ix_generated_resumes_job", "job_id"),
+        UniqueConstraint(
+            "user_id", "job_id", "master_resume_id", name="uq_generated_resume_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    master_resume_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("master_resumes.id"), nullable=True
+    )
+    markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    json_sections: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    pdf_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_log: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    missing_keywords: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    matched_keywords: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -1,0 +1,13 @@
+{
+  "jobPostingInfo": {
+    "id": "aaaa1111bbbb2222cccc3333",
+    "title": "Mechanical Design Engineer Intern",
+    "jobDescription": "<p>Design mechanical assemblies in SolidWorks and run FEA on structural components.</p><ul><li>CAD/CAM</li><li>GD&amp;T</li></ul>",
+    "location": "US, CA, Santa Clara",
+    "postedOn": "Posted Today",
+    "startDate": "2026-11-09",
+    "timeType": "Full time",
+    "externalUrl": "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/US-CA-Santa-Clara/Mechanical-Design-Engineer-Intern_JR1001",
+    "country": {"descriptor": "United States of America"}
+  }
+}

@@ -1,8 +1,10 @@
 """Typer CLI exposing the full SPEC command surface.
 
-Phase 1 implements scaffolding stubs for most commands; the deferred
-commands (analyze/notify/digest) only print an 'available in a later
-phase' message. ``init-db`` runs Alembic migrations programmatically.
+Every SPEC command is implemented: company management (including
+add-company-by-name), ingestion + screening, the AI ``analyze`` engine, email
+``notify``/``digest``, the background ``scheduler``, ``backup``/``restore``, and
+the Streamlit ``dashboard``. ``init-db`` runs Alembic migrations
+programmatically.
 """
 
 from __future__ import annotations
@@ -19,8 +21,6 @@ from jobtracker.logging_setup import configure
 from jobtracker.settings import get_settings
 
 app = typer.Typer(help="Waterloo Mechanical Engineering Co-op Job Tracker")
-
-_LATER_PHASE_MSG = "This command is available in a later phase."
 
 
 @contextmanager
@@ -76,6 +76,41 @@ def add_company(
         f"Added {result.company_id} (ats={result.ats}, token={result.board_token}); "
         f"baseline imported {result.baseline_jobs} jobs."
     )
+
+
+@app.command("add-company-by-name")
+def add_company_by_name(
+    name: str = typer.Argument(..., help="Company name to resolve, e.g. 'Toyota'"),
+    company_id: str | None = typer.Option(None, "--id", help="Explicit company id/slug"),
+    priority: str = typer.Option("medium", "--priority", help="high|medium|low"),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Import a found board even if its identity could not be confirmed.",
+    ),
+) -> None:
+    """Add a company by NAME: probe public boards and baseline-import the match.
+
+    Resolves the name to a public Greenhouse/Lever/Ashby/Workable board, picks
+    the first that returns real postings whose identity matches the name, and
+    baseline-imports it. If a board is found but its identity cannot be
+    confirmed (a possible slug collision), it is NOT imported; re-run with
+    ``--confirm`` to import it anyway. If nothing resolves it prints a helpful
+    message (use ``add-company`` with the careers URL instead).
+    """
+    from jobtracker.connectors.http import HttpClient
+    from jobtracker.services import company_service
+
+    with _session_scope() as session, HttpClient() as http:
+        result = company_service.add_from_name(
+            session, name, http, company_id=company_id, priority=priority,
+            confirm=confirm,
+        )
+    typer.echo(result.message)
+    if result.needs_verification:
+        typer.echo("Re-run with --confirm to import this board.")
+    if not result.resolved:
+        raise typer.Exit(code=1)
 
 
 def _sync_seed(session: Session) -> None:
@@ -222,6 +257,7 @@ def health() -> None:
     typer.echo(f"  missing application URL: {len(report.missing_application_url)}")
     typer.echo(f"  unknown term: {len(report.unknown_term)}")
     typer.echo(f"  unknown sponsorship: {len(report.unknown_sponsorship)}")
+    typer.echo(f"  low-confidence AI: {len(report.low_confidence_ai)}")
     typer.echo(f"  stale sources: {len(report.stale_sources)}")
     typer.echo(f"  removed-but-present: {len(report.removed_but_present)}")
     typer.echo(f"  active-but-absent: {len(report.active_but_absent)}")
@@ -244,22 +280,144 @@ def test_source(company_id: str = typer.Argument(...)) -> None:
         typer.echo(f"  error: {result.error}")
 
 
+@app.command("backup")
+def backup(
+    output: str = typer.Option(..., "--output", help="Destination path for the backup"),
+) -> None:
+    """Back up the SQLite database to ``--output`` (a safe file copy).
+
+    Uses SQLite's online backup API so it is safe even while the app is
+    running. Only SQLite URLs are supported; for other databases use that
+    engine's native dump tooling.
+    """
+    from jobtracker.services import backup_service
+
+    dest = backup_service.backup_database(get_settings(), output)
+    typer.echo(f"Backed up database to {dest}.")
+
+
+@app.command("restore")
+def restore(
+    input: str = typer.Option(..., "--input", help="Path to a backup to restore from"),
+) -> None:
+    """Restore the SQLite database from a backup created by ``backup``.
+
+    Overwrites the current database file with the backup. Stop the app/scheduler
+    first. Only SQLite URLs are supported.
+    """
+    from jobtracker.services import backup_service
+
+    dest = backup_service.restore_database(get_settings(), input)
+    typer.echo(f"Restored database from backup into {dest}.")
+
+
+@app.command("scheduler")
+def scheduler() -> None:
+    """Run the foreground polling scheduler (dedicated worker process).
+
+    Does an immediate first poll of all enabled + active companies on startup,
+    then polls each company on its effective interval (priority default, capped
+    so no company ever waits longer than ~1 hour). Runs until interrupted. Keep
+    the one-shot ``run`` command for manual single passes.
+    """
+    from jobtracker.scheduler import run_scheduler
+
+    settings = get_settings()
+    typer.echo(
+        "Starting scheduler (immediate first poll, then interval polling; "
+        f"max interval {settings.scheduler_max_interval_minutes} min). "
+        "Press Ctrl+C to stop."
+    )
+    run_scheduler(settings)
+
+
 @app.command("analyze")
-def analyze() -> None:
-    """AI analysis (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def analyze(
+    job_id: str = typer.Option(..., "--job", help="Job id to analyze with the AI engine"),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run even if a cached analysis exists"
+    ),
+) -> None:
+    """Run the AI relevance engine on one job (safe with no API key).
+
+    With no Gemini key configured this prints an informative 'add a key'
+    message instead of failing. With a key it analyzes the job, caches the
+    result (keyed by description + profile version), and prints a summary.
+    """
+    from jobtracker.services import ai_service
+
+    with _session_scope() as session:
+        result = ai_service.analyze_job(session, job_id, force=force)
+
+    if not result.available:
+        typer.echo(result.message or "AI unavailable - add a Gemini API key.")
+        return
+
+    data = result.result
+    source = "cache" if result.cache_hit else f"{result.provider}:{result.model}"
+    typer.echo(
+        f"analyze {job_id} [{source}]: "
+        f"score={data.get('relevance_score')} "
+        f"recommendation={data.get('recommendation')} "
+        f"confidence={result.confidence}"
+    )
+    if data.get("explanation"):
+        typer.echo(f"  {data['explanation']}")
 
 
 @app.command("notify")
-def notify() -> None:
-    """Notifications (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def notify(
+    since_hours: float | None = typer.Option(
+        None,
+        "--since-hours",
+        help="Only consider jobs/events detected in the last N hours (default: all).",
+    ),
+) -> None:
+    """Email users about recent new/changed/removed jobs and source failures.
+
+    Evaluates each user's subscriptions and notification preferences against
+    recently detected changes and sends due emails, deduped so nothing is sent
+    twice. Safe to run with no SMTP creds: emails are written to the outbox.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from jobtracker.services import notification_service
+
+    since = None
+    if since_hours is not None:
+        since = datetime.now(UTC) - timedelta(hours=since_hours)
+
+    with _session_scope() as session:
+        result = notification_service.run_recent(session, since=since)
+    typer.echo(
+        f"Notify complete: {result.sent} sent, "
+        f"{result.skipped_duplicate} skipped (already sent)."
+    )
 
 
 @app.command("digest")
-def digest() -> None:
-    """Digest summaries (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def digest(
+    since_hours: float = typer.Option(
+        24.0,
+        "--since-hours",
+        help="Summarise jobs detected in the last N hours (default: 24).",
+    ),
+) -> None:
+    """Send each subscribed user a periodic summary email of recent matches.
+
+    Safe to run with no SMTP creds: emails are written to the outbox.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from jobtracker.services import notification_service
+
+    since = datetime.now(UTC) - timedelta(hours=since_hours)
+    with _session_scope() as session:
+        result = notification_service.send_digest(session, since=since)
+    typer.echo(
+        f"Digest complete: {result.sent} sent, "
+        f"{result.skipped_duplicate} skipped (already sent)."
+    )
 
 
 if __name__ == "__main__":

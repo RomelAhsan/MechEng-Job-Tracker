@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import session_scope, write_session_scope
+from jobtracker.dashboard._shared import (
+    is_admin,
+    require_login,
+    session_scope,
+    write_session_scope,
+)
 from jobtracker.services import company_service, dashboard_service
 
 _PRIORITIES = ("high", "medium", "low")
@@ -34,9 +39,79 @@ def _add_company(url: str, company_id: str, name: str, priority: str) -> str:
     )
 
 
+def _add_company_by_name(name: str, priority: str, *, confirm: bool = False):
+    from jobtracker.connectors.http import HttpClient
+
+    with write_session_scope() as session, HttpClient() as http:
+        return company_service.add_from_name(
+            session, name, http, priority=priority, confirm=confirm
+        )
+
+
 def render() -> None:
+    require_login()
+    admin = is_admin()
     st.title("Companies")
     st.caption("Tracked employers, their ATS source health, and controls.")
+
+    if not admin:
+        st.info(
+            "The company registry is shared. Only an admin can add, edit, or "
+            "remove companies; you can view all tracked companies below."
+        )
+
+    if not admin:
+        _render_company_table()
+        return
+
+    with st.form("add-company-by-name"):
+        st.subheader("Add a company by name")
+        st.caption(
+            "Type a company name (e.g. 'Toyota'). We probe public job boards "
+            "(Greenhouse / Lever / Ashby / Workable) and import the first match. "
+            "If it cannot be auto-resolved, use the careers-URL form below."
+        )
+        name_cols = st.columns([3, 1])
+        by_name = name_cols[0].text_input("Company name", key="add-by-name-input")
+        name_priority = name_cols[1].selectbox(
+            "Priority", _PRIORITIES, index=1, key="add-by-name-priority"
+        )
+        name_submitted = st.form_submit_button("Resolve and add")
+    if name_submitted and by_name:
+        with st.spinner(f"Searching public boards for '{by_name}'..."):
+            result = _add_company_by_name(by_name, name_priority)
+        if result.resolved:
+            st.success(result.message)
+        elif result.needs_verification:
+            # A board was found but its identity could not be confirmed; make
+            # the user explicitly confirm before importing a possibly-wrong org.
+            st.session_state["pending_name_verify"] = {
+                "name": by_name,
+                "priority": name_priority,
+                "url": result.candidate_url,
+                "message": result.message,
+            }
+        else:
+            st.warning(result.message)
+
+    pending = st.session_state.get("pending_name_verify")
+    if pending:
+        st.warning(pending["message"])
+        verify_cols = st.columns(2)
+        if verify_cols[0].button(
+            f"Yes, import {pending['url']}", key="confirm-name-add"
+        ):
+            with st.spinner("Importing confirmed board..."):
+                confirmed = _add_company_by_name(
+                    pending["name"], pending["priority"], confirm=True
+                )
+            st.session_state.pop("pending_name_verify", None)
+            if confirmed.resolved:
+                st.success(confirmed.message)
+            else:
+                st.warning(confirmed.message)
+        if verify_cols[1].button("Cancel", key="cancel-name-add"):
+            st.session_state.pop("pending_name_verify", None)
 
     with st.form("add-company"):
         st.subheader("Add a company by careers URL")
@@ -52,6 +127,12 @@ def render() -> None:
         except Exception as exc:  # noqa: BLE001 - surface add errors to the user.
             st.error(f"Could not add company: {exc}")
 
+    _render_company_table(with_edit=True)
+
+
+def _render_company_table(*, with_edit: bool = False) -> None:
+    import streamlit as st
+
     st.divider()
     st.subheader("Tracked companies")
 
@@ -59,7 +140,7 @@ def render() -> None:
         companies = dashboard_service.list_company_views(session)
 
     if not companies:
-        st.info("No companies tracked yet. Add one above.")
+        st.info("No companies tracked yet.")
         return
 
     st.dataframe(
@@ -81,6 +162,9 @@ def render() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    if not with_edit:
+        return
 
     st.subheader("Edit a company")
     ids = [c.id for c in companies]

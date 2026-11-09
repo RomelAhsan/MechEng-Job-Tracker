@@ -9,17 +9,26 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import render_job_card, session_scope
+from jobtracker.dashboard._shared import render_job_card, require_login, session_scope
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobFilters
 
 
 def render() -> None:
+    user_id = require_login()
     st.title("Relevant For Me")
     st.caption(
         "Strong and possible mechanical-engineering matches for your profile. "
         "Adjacent roles appear as possible matches and are never hidden."
     )
+
+    cols = st.columns([4, 1])
+    cols[0].caption(
+        "New postings appear here after each scheduler poll (≤1h per source). "
+        "Use Refresh to re-query after a poll."
+    )
+    if cols[1].button("Refresh", key="refresh-relevant"):
+        st.rerun()
 
     with session_scope() as session:
         options = dashboard_service.filter_options(session)
@@ -59,8 +68,29 @@ def render() -> None:
             freshness_days=int(freshness_days) or None,
             only_new=only_new,
         )
-        jobs = dashboard_service.list_relevant_jobs(session, filters)
+        jobs = dashboard_service.list_relevant_jobs(session, filters, user_id=user_id)
+
+        # Stash the active page filters so the Notifications page can offer an
+        # "Email me jobs on my page" subscription built from exactly these.
+        st.session_state["relevant_filter_json"] = {
+            k: v
+            for k, v in {
+                "classifications": (
+                    classifications or list(dashboard_service.RELEVANT_CLASSIFICATIONS)
+                ),
+                "term_seasons": term_seasons or None,
+                "countries": countries or None,
+                "locations_query": locations_query or None,
+                "remote_statuses": remote_statuses or None,
+                "employment_types": employment_types or None,
+                "eligibility_statuses": eligibility_statuses or None,
+                "min_fit_score": fit_range[0] or None,
+                "max_fit_score": fit_range[1] if fit_range[1] < 100 else None,
+                "only_new": only_new or None,
+            }.items()
+            if v is not None
+        }
 
         st.write(f"**{len(jobs)}** matching postings.")
         for view in jobs:
-            render_job_card(view)
+            render_job_card(view, user_id=user_id)

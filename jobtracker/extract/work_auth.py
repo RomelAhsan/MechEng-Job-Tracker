@@ -28,6 +28,10 @@ from jobtracker.schemas.job import VisaSponsorship
 ELIGIBLE = "eligible"
 POSSIBLY_ELIGIBLE_UNKNOWN = "possibly_eligible_unknown"
 LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED = "likely_ineligible_sponsorship_required"
+#: Hard barrier for a Canadian citizen: ITAR / export-control / US-person /
+#: US-citizen-only requirement. Jobs with this status are filtered out of the
+#: dashboard ENTIRELY (never merely flagged).
+INELIGIBLE_ITAR = "ineligible_itar"
 
 
 def _quote(match: re.Match[str]) -> str:
@@ -83,6 +87,61 @@ _FOREIGN_PR_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ITAR / export-control / US-person / US-citizen-only barrier. A match is a
+# hard ineligibility for a Canadian citizen and takes precedence over the
+# sponsorship-based eligibility derivation. Tolerates U.S./US/United States
+# variants.
+_US = r"(?:u\.?\s*s\.?|united states)"
+
+# Explicit-barrier arms: these phrasings ARE the eligibility barrier on their
+# own (a Canadian citizen cannot satisfy them), so they match unconditionally
+# and always resolve to INELIGIBLE_ITAR. Kept exactly as reviewed.
+_ITAR_BARRIER_RE = re.compile(
+    rf"(?:must be|require[sd]?|are)\s+(?:a\s+)?{_US}\.?\s*persons?\b"
+    rf"|(?:must be|require[sd]?|only)\s+(?:a\s+)?{_US}\s*"
+    r"(?:citizen|permanent resident)"
+    rf"|{_US}\s+citizen(?:ship)?\s+(?:is\s+)?required"
+    rf"|requires?\s+{_US}\s+citizenship"
+    rf"|{_US}\s+persons?\s+only"
+    rf"|{_US}\s+citizens?\s+(?:or\s+permanent\s+residents?\s+)?only",
+    re.IGNORECASE,
+)
+
+# Bare-keyword arms: ``itar``, ``export control``, ``\bEAR\b`` and a bare
+# ``U.S. person`` mention name a TOPIC/SKILL and are NOT barriers on their own
+# ("ITAR experience a plus", "export control training provided"). They only
+# indicate an eligibility barrier when framed as a requirement, so they are
+# gated behind nearby barrier-framing wording. Without that framing the role
+# falls through to the normal possibly_eligible_unknown path (never hidden).
+_ITAR_KEYWORD = (
+    r"itar(?:[-\s]*compliance|[-\s]*compliant)?"
+    r"|export[-\s]*control(?:led|s)?(?:\s+regulations?)?"
+    r"|\bEAR\b"
+    rf"|{_US}\.?\s*persons?\b"
+)
+# Barrier-framing cues that must appear next to a bare keyword for it to count
+# as a genuine eligibility barrier rather than a topic/skill mention.
+_BARRIER_CUE = (
+    r"require[sd]?|must|only|eligib(?:le|ility)|due to|restricted to"
+    r"|limited to|authorized to access|clearance required"
+)
+# Keyword followed by framing, OR framing followed by keyword, within a short
+# window so unrelated sentences do not bridge a false match.
+_ITAR_KEYWORD_RE = re.compile(
+    rf"(?:{_ITAR_KEYWORD})[^.?!\n]{{0,60}}\b(?:{_BARRIER_CUE})\b"
+    rf"|\b(?:{_BARRIER_CUE})\b[^.?!\n]{{0,60}}(?:{_ITAR_KEYWORD})",
+    re.IGNORECASE,
+)
+
+
+def _match_itar(text: str) -> re.Match[str] | None:
+    """Return an ITAR/US-citizen-only barrier match, or None.
+
+    Explicit-barrier phrasings match on their own; bare topic/skill keywords
+    only match when framed as a requirement so mere mentions stay visible.
+    """
+    return _ITAR_BARRIER_RE.search(text) or _ITAR_KEYWORD_RE.search(text)
+
 
 @dataclass
 class WorkAuthExtraction:
@@ -125,6 +184,7 @@ def extract_work_auth(
     us_citizen = _US_CITIZEN_RE.search(text)
     ca_accepted = _CA_ACCEPTED_RE.search(text)
     foreign_pr = _FOREIGN_PR_RE.search(text)
+    itar = _match_itar(text)
 
     # Sponsorship signal (negative wins over positive when both appear).
     if no_sponsor is not None:
@@ -139,6 +199,18 @@ def extract_work_auth(
         result.visa_sponsorship = VisaSponsorship.UNKNOWN
         result.sponsorship_confidence = 0.0
         result.sponsorship_evidence = ""
+
+    # ITAR / export-control / US-citizen-only is a HARD barrier that takes
+    # precedence over the sponsorship-based eligibility derivation below.
+    if itar is not None:
+        quote = _quote(itar)
+        result.citizenship_requirement = quote
+        result.work_authorization_requirement = quote
+        if not result.sponsorship_evidence:
+            result.sponsorship_evidence = quote
+        result.eligibility_status = INELIGIBLE_ITAR
+        result.reasons.append(f"ITAR/US-citizen-only requirement: {quote}")
+        return result
 
     if us_citizen is not None:
         result.citizenship_requirement = _quote(us_citizen)

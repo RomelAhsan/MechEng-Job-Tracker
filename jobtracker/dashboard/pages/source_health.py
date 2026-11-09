@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import session_scope
+from jobtracker.dashboard._shared import require_login, session_scope
 from jobtracker.services import dashboard_service, health_service
 
 
@@ -17,8 +17,17 @@ def _fmt(value) -> str:
 
 
 def render() -> None:
+    require_login()
     st.title("Source Health")
     st.caption("Per-source check status, the accuracy report, and the quarantine queue.")
+
+    st.caption(
+        "Boards do not push new postings to us, so the scheduler polls each "
+        "source on its interval (capped at ~1 hour). These timestamps show "
+        "exactly when each source was last polled."
+    )
+    if st.button("Refresh", key="refresh-source-health"):
+        st.rerun()
 
     with session_scope() as session:
         rows = health_service.source_health(session)
@@ -34,6 +43,7 @@ def render() -> None:
                     "status": r.last_status or "—",
                     "last checked": _fmt(r.last_checked_at),
                     "last success": _fmt(r.last_successful_check_at),
+                    "last change": _fmt(r.last_change_detected_at),
                     "jobs": r.current_job_count,
                     "new (last run)": r.new_jobs_last_run,
                     "removed (last run)": r.removed_jobs_last_run,
@@ -54,10 +64,11 @@ def render() -> None:
     cols[0].metric("Missing application URL", len(report.missing_application_url))
     cols[1].metric("Unknown term", len(report.unknown_term))
     cols[2].metric("Unknown sponsorship", len(report.unknown_sponsorship))
-    cols = st.columns(3)
-    cols[0].metric("Stale sources", len(report.stale_sources))
-    cols[1].metric("Removed-but-present", len(report.removed_but_present))
-    cols[2].metric("Active-but-absent", len(report.active_but_absent))
+    cols = st.columns(4)
+    cols[0].metric("Low-confidence AI", len(report.low_confidence_ai))
+    cols[1].metric("Stale sources", len(report.stale_sources))
+    cols[2].metric("Removed-but-present", len(report.removed_but_present))
+    cols[3].metric("Active-but-absent", len(report.active_but_absent))
     st.caption(f"Total flagged issues: {report.total_issues()}")
 
     with st.expander("Accuracy report details"):
@@ -65,6 +76,7 @@ def render() -> None:
             "missing_application_url": report.missing_application_url,
             "unknown_term": report.unknown_term,
             "unknown_sponsorship": report.unknown_sponsorship,
+            "low_confidence_ai": report.low_confidence_ai,
             "stale_sources": report.stale_sources,
             "removed_but_present": report.removed_but_present,
             "active_but_absent": report.active_but_absent,

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1a1a1a;">
+    <p>{{ intro }}</p>
+    {% for item in items %}
+    <div style="border:1px solid #ddd; border-radius:6px; padding:12px; margin-bottom:12px;">
+      <h3 style="margin:0 0 6px 0;">
+        {{ item.title }} &mdash; {{ item.company_name }}
+      </h3>
+      <p style="margin:0 0 6px 0; color:#555;"><strong>Why:</strong> {{ item.reason }}</p>
+      <ul style="margin:0 0 8px 0; padding-left:18px;">
+        <li><strong>Location:</strong> {{ item.location or "&mdash;" }}</li>
+        <li><strong>Term:</strong> {{ item.term_season }}</li>
+        <li><strong>Duration:</strong> {{ item.duration }}</li>
+        <li><strong>Fit score:</strong>
+          {{ item.fit_score if item.fit_score is not none else "&mdash;" }}</li>
+      </ul>
+      {% if item.application_url %}
+      <a href="{{ item.application_url }}"
+         style="display:inline-block; padding:8px 14px; background:#0b5fff;
+                color:#fff; text-decoration:none; border-radius:4px;">Apply</a>
+      {% else %}
+      <span style="color:#999;">No direct application link available</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <p style="font-size:12px; color:#888;">
+      You are receiving this because you enabled job notifications in the
+      MechEng Job Tracker. Manage your subscriptions on the Notifications page.
+    </p>
+  </body>
+</html>

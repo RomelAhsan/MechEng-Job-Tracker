@@ -11,16 +11,23 @@ ORM session directly beyond passing it in.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.db.models import Company, Job, QuarantineItem, SourceHealth
+from jobtracker.extract.work_auth import INELIGIBLE_ITAR
 
 #: Classifications surfaced on the "Relevant For Me" page.
 RELEVANT_CLASSIFICATIONS: tuple[str, ...] = ("strong_match", "possible_match")
+
+#: Eligibility statuses that are filtered out of EVERY dashboard view entirely
+#: (not merely flagged). A Canadian citizen cannot work ITAR / US-citizen-only
+#: roles, so they are excluded regardless of ``include_removed`` and regardless
+#: of the eligibility-status filter widget selection.
+HARD_EXCLUDED_ELIGIBILITY: tuple[str, ...] = (INELIGIBLE_ITAR,)
 
 #: A job first seen within this window is flagged with a "new" badge.
 DEFAULT_NEW_WINDOW = timedelta(days=3)
@@ -55,10 +62,21 @@ class JobView:
     posted_at: datetime | None
     first_seen_at: datetime | None
     is_new: bool
+    #: Presentation-ready freshness fields (computed in the service, not the
+    #: view): how long ago the job was first seen, and how long ago its source
+    #: was last polled. ``source_last_checked_at`` comes from SourceHealth.
+    first_seen_ago: str | None
+    source_last_checked_at: datetime | None
+    source_last_checked_ago: str | None
     description: str
     requirements: list[str]
     preferred_qualifications: list[str]
     skills: list[str]
+    #: Per-user personalization (Phase 2). Populated only when a ``user_id`` is
+    #: passed to the listing functions; otherwise ``is_saved`` is False and
+    #: ``application_status`` is None so single-profile callers are unchanged.
+    is_saved: bool = False
+    application_status: str | None = None
 
 
 @dataclass
@@ -82,6 +100,9 @@ class JobFilters:
     freshness_days: int | None = None
     include_removed: bool = False
     only_new: bool = False
+    #: Per-user scoping (Phase 2): keep only jobs the current user has saved.
+    #: Ignored unless the listing call is passed a ``user_id``.
+    only_saved: bool = False
 
 
 @dataclass
@@ -113,6 +134,13 @@ class CompanyView:
     active_job_count: int
     last_status: str | None
     last_checked_at: datetime | None
+    last_successful_check_at: datetime | None
+    last_change_detected_at: datetime | None
+    last_checked_ago: str | None
+    new_jobs_last_run: int | None
+    removed_jobs_last_run: int | None
+    current_job_count: int | None
+    last_error: str | None
     error_count: int
 
 
@@ -134,6 +162,30 @@ def _now() -> datetime:
 
 def _as_aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def humanize_ago(value: datetime | None, *, now: datetime | None = None) -> str | None:
+    """Return a compact relative-time label (e.g. ``"3h ago"``) or ``None``.
+
+    Presentation-ready freshness helper kept in the service so the view layer
+    stays thin. Negative deltas (clock skew / future timestamps) render as
+    ``"just now"``.
+    """
+    if value is None:
+        return None
+    now = now or _now()
+    delta = now - _as_aware(value)
+    seconds = delta.total_seconds()
+    if seconds < 60:
+        return "just now"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
 
 
 def _is_new(first_seen_at: datetime | None, *, window: timedelta, now: datetime) -> bool:
@@ -160,7 +212,16 @@ def _derive_concerns(job: Job) -> list[str]:
     return concerns
 
 
-def _to_view(job: Job, company_name: str, *, now: datetime, new_window: timedelta) -> JobView:
+def _to_view(
+    job: Job,
+    company_name: str,
+    *,
+    now: datetime,
+    new_window: timedelta,
+    source_last_checked_at: datetime | None = None,
+    is_saved: bool = False,
+    application_status: str | None = None,
+) -> JobView:
     reasons = list(job.classification_reasons or [])
     concerns = _derive_concerns(job)
     return JobView(
@@ -189,10 +250,15 @@ def _to_view(job: Job, company_name: str, *, now: datetime, new_window: timedelt
         posted_at=job.posted_at,
         first_seen_at=job.first_seen_at,
         is_new=_is_new(job.first_seen_at, window=new_window, now=now),
+        first_seen_ago=humanize_ago(job.first_seen_at, now=now),
+        source_last_checked_at=source_last_checked_at,
+        source_last_checked_ago=humanize_ago(source_last_checked_at, now=now),
         description=job.description or "",
         requirements=list(job.requirements or []),
         preferred_qualifications=list(job.preferred_qualifications or []),
         skills=list(job.skills or []),
+        is_saved=is_saved,
+        application_status=application_status,
     )
 
 
@@ -228,6 +294,30 @@ def _matches(view: JobView, filters: JobFilters, *, now: datetime) -> bool:
     return True
 
 
+def matches_filters(view: JobView, filters: JobFilters, *, now: datetime | None = None) -> bool:
+    """Public, pure predicate: does ``view`` satisfy ``filters``?
+
+    This is the single source of truth for "does a job match this filter set",
+    reused by the notification service so subscription matching never diverges
+    from the dashboard's read-side filtering. ``only_saved`` is a per-user view
+    toggle applied by the listing functions, not a job-intrinsic predicate, so
+    it is intentionally ignored here.
+    """
+    return _matches(view, filters, now=now or _now())
+
+
+def filters_from_dict(data: dict | None) -> JobFilters:
+    """Build a :class:`JobFilters` from a stored subscription ``filter_json``.
+
+    Unknown keys are ignored so older/newer stored filters never crash the
+    notifier. Missing keys fall back to the dataclass defaults.
+    """
+    data = dict(data or {})
+    allowed = {f.name for f in fields(JobFilters)}
+    kwargs = {k: v for k, v in data.items() if k in allowed}
+    return JobFilters(**kwargs)
+
+
 def _rank_key(view: JobView) -> tuple[int, datetime]:
     """Sort by fit score (desc) then first-seen (desc)."""
     score = view.fit_score if view.fit_score is not None else -1
@@ -244,26 +334,106 @@ def list_jobs(
     filters: JobFilters | None = None,
     *,
     new_window: timedelta = DEFAULT_NEW_WINDOW,
+    user_id: int | None = None,
 ) -> list[JobView]:
     """Return job views matching ``filters``, newest-and-best first.
 
     By default only ``active`` jobs are returned; set ``include_removed`` to
     also include removed/expired postings (the All Internships archive toggle).
     Results are ordered by fit score (desc) then first-seen (desc).
+
+    When ``user_id`` is given, each view is enriched with the user's
+    ``is_saved`` flag and ``application_status``. When ``None`` (the default)
+    the behaviour is identical to the Phase-1 single-profile dashboard.
     """
     filters = filters or JobFilters()
     now = _now()
     stmt = select(Job, Company.name).join(Company, Company.id == Job.company_id)
     if not filters.include_removed:
         stmt = stmt.where(Job.status == "active")
+    # Hard ITAR / US-citizen-only exclusion: applied for every view, including
+    # the archive (include_removed) and independent of the eligibility_statuses
+    # filter widget, so these jobs can never be surfaced.
+    stmt = stmt.where(
+        Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
+        | Job.eligibility_status.is_(None)
+    )
+
+    last_checked = {
+        company_id: checked_at
+        for company_id, checked_at in session.execute(
+            select(SourceHealth.company_id, SourceHealth.last_checked_at)
+        )
+    }
+
+    saved_ids: set[str] = set()
+    status_by_job: dict[str, str] = {}
+    if user_id is not None:
+        # Imported lazily to avoid a service import cycle at module load.
+        from jobtracker.services import saved_job_service
+
+        saved_ids = saved_job_service.list_saved_job_ids(session, user_id)
+        status_by_job = saved_job_service.status_map(session, user_id)
 
     views = [
-        _to_view(job, name, now=now, new_window=new_window)
+        _to_view(
+            job,
+            name,
+            now=now,
+            new_window=new_window,
+            source_last_checked_at=last_checked.get(job.company_id),
+            is_saved=job.job_id in saved_ids,
+            application_status=status_by_job.get(job.job_id),
+        )
         for job, name in session.execute(stmt)
     ]
     views = [v for v in views if _matches(v, filters, now=now)]
+    if filters.only_saved:
+        views = [v for v in views if v.is_saved]
     views.sort(key=_rank_key, reverse=True)
     return views
+
+
+def views_for_job_ids(
+    session: Session,
+    job_ids: list[str],
+    *,
+    new_window: timedelta = DEFAULT_NEW_WINDOW,
+) -> dict[str, JobView]:
+    """Return ``{job_id: JobView}`` for the given ids (any status).
+
+    Used by the notification service to evaluate specific newly-detected /
+    changed / removed jobs against subscriptions. The ITAR hard exclusion is
+    still applied so ineligible roles are never surfaced in a notification.
+    """
+    if not job_ids:
+        return {}
+    now = _now()
+    stmt = (
+        select(Job, Company.name)
+        .join(Company, Company.id == Job.company_id)
+        .where(Job.job_id.in_(job_ids))
+        .where(
+            Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
+            | Job.eligibility_status.is_(None)
+        )
+    )
+    last_checked = {
+        company_id: checked_at
+        for company_id, checked_at in session.execute(
+            select(SourceHealth.company_id, SourceHealth.last_checked_at)
+        )
+    }
+    return {
+        job.job_id: _to_view(
+            job,
+            name,
+            now=now,
+            new_window=new_window,
+            source_last_checked_at=last_checked.get(job.company_id),
+        )
+        for job, name in session.execute(stmt)
+    }
 
 
 def list_relevant_jobs(
@@ -271,6 +441,7 @@ def list_relevant_jobs(
     filters: JobFilters | None = None,
     *,
     new_window: timedelta = DEFAULT_NEW_WINDOW,
+    user_id: int | None = None,
 ) -> list[JobView]:
     """Active strong + possible matches for the 'Relevant For Me' page."""
     filters = filters or JobFilters()
@@ -281,7 +452,22 @@ def list_relevant_jobs(
     else:
         filters.classifications = list(RELEVANT_CLASSIFICATIONS)
     filters.include_removed = False
-    return list_jobs(session, filters, new_window=new_window)
+    return list_jobs(session, filters, new_window=new_window, user_id=user_id)
+
+
+def list_saved_job_views(
+    session: Session,
+    user_id: int,
+    *,
+    new_window: timedelta = DEFAULT_NEW_WINDOW,
+) -> list[JobView]:
+    """Return the user's saved jobs as views, including removed postings.
+
+    Used by the Saved / Application Pipeline page so hearted jobs remain
+    visible even after a posting is removed from its board.
+    """
+    filters = JobFilters(include_removed=True, only_saved=True)
+    return list_jobs(session, filters, new_window=new_window, user_id=user_id)
 
 
 def filter_options(session: Session) -> FilterOptions:
@@ -304,7 +490,7 @@ def filter_options(session: Session) -> FilterOptions:
             seen["countries"].add(job.country)
         seen["remote_statuses"].add(job.remote_status or "unknown")
         seen["employment_types"].add(job.employment_type or "unknown")
-        if job.eligibility_status:
+        if job.eligibility_status and job.eligibility_status not in HARD_EXCLUDED_ELIGIBILITY:
             seen["eligibility_statuses"].add(job.eligibility_status)
         seen["sponsorship_statuses"].add(job.visa_sponsorship or "unknown")
 
@@ -330,6 +516,7 @@ def list_company_views(session: Session) -> list[CompanyView]:
             ).all()
         )
         health = session.get(SourceHealth, company.id)
+        now = _now()
         views.append(
             CompanyView(
                 id=company.id,
@@ -344,6 +531,19 @@ def list_company_views(session: Session) -> list[CompanyView]:
                 active_job_count=active_count,
                 last_status=health.last_status if health else None,
                 last_checked_at=health.last_checked_at if health else None,
+                last_successful_check_at=(
+                    health.last_successful_check_at if health else None
+                ),
+                last_change_detected_at=(
+                    health.last_change_detected_at if health else None
+                ),
+                last_checked_ago=humanize_ago(
+                    health.last_checked_at if health else None, now=now
+                ),
+                new_jobs_last_run=health.new_jobs_last_run if health else None,
+                removed_jobs_last_run=health.removed_jobs_last_run if health else None,
+                current_job_count=health.current_job_count if health else None,
+                last_error=health.last_error if health else None,
                 error_count=(health.error_count or 0) if health else 0,
             )
         )

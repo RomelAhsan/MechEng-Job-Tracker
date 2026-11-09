@@ -1,0 +1,161 @@
+"""Prompt templates for the AI relevance engine (SPEC Phase 3).
+
+Builds the strict-JSON prompt sent to the model. The prompt includes the user
+profile, the job's structured fields, and the CLEANED description text that was
+already stored on ``Job.description`` by the normalizer - raw HTML is NEVER
+sent. Overly long descriptions are truncated to keep prompts bounded.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+
+#: Exact SPEC output fields the model must return (and only these).
+SPEC_FIELDS: tuple[str, ...] = (
+    "relevance_score",
+    "recommendation",
+    "mechanical_relevance",
+    "term_assessment",
+    "duration_assessment",
+    "location_assessment",
+    "work_authorization_assessment",
+    "matched_skills",
+    "missing_skills",
+    "concerns",
+    "evidence",
+    "explanation",
+    "confidence",
+)
+
+#: Maximum characters of job description included in the prompt.
+MAX_DESCRIPTION_CHARS = 8000
+
+
+@dataclass
+class JobPromptInput:
+    """Structured, already-cleaned job fields used to build the prompt.
+
+    ``description`` must be the cleaned text stored on ``Job.description`` - the
+    caller never passes raw HTML.
+    """
+
+    title: str
+    company: str
+    location: str
+    term_season: str
+    duration_label: str
+    citizenship_requirement: str
+    work_authorization_requirement: str
+    visa_sponsorship: str
+    sponsorship_evidence: str
+    description: str
+    requirements: list[str]
+    preferred_qualifications: list[str]
+    skills: list[str]
+    application_url: str
+
+
+def truncate_description(text: str, *, limit: int = MAX_DESCRIPTION_CHARS) -> str:
+    """Truncate overly long descriptions, appending a marker when cut."""
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n[... truncated ...]"
+
+
+def _schema_block() -> str:
+    """Human-readable description of the required strict-JSON schema."""
+    return json.dumps(
+        {
+            "relevance_score": "integer 0-100",
+            "recommendation": "one of: apply | maybe | skip",
+            "mechanical_relevance": "short string assessing mechanical-engineering fit",
+            "term_assessment": "short string on term/season fit vs the profile",
+            "duration_assessment": "short string on co-op duration fit",
+            "location_assessment": "short string on location fit",
+            "work_authorization_assessment": (
+                "short string on citizenship/sponsorship fit"
+            ),
+            "matched_skills": "array of strings from the profile that match",
+            "missing_skills": "array of strings the role wants that are missing",
+            "concerns": "array of short strings describing risks/caveats",
+            "evidence": "array of short quoted snippets supporting the assessment",
+            "explanation": "2-4 sentence overall rationale",
+            "confidence": "number 0.0-1.0",
+        },
+        indent=2,
+    )
+
+
+def build_profile_summary(profile: dict) -> str:
+    """Render a compact user-profile summary block for the prompt."""
+    fields = (
+        ("Name", profile.get("name")),
+        ("Program", profile.get("program")),
+        ("University", profile.get("university")),
+        ("Year", profile.get("year")),
+        ("Citizenship", profile.get("citizenship")),
+        ("Work authorization", profile.get("work_authorization")),
+        ("Preferred locations", profile.get("preferred_locations")),
+        ("Available terms", profile.get("available_terms")),
+        ("Preferred duration (months)", profile.get("preferred_duration_months")),
+        ("Interests", profile.get("interests")),
+        ("Skills", profile.get("skills")),
+    )
+    lines = []
+    for label, value in fields:
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value)
+        lines.append(f"- {label}: {value}")
+    return "\n".join(lines) or "- (no profile details provided)"
+
+
+def build_analysis_prompt(profile: dict, job: JobPromptInput) -> str:
+    """Build the strict-JSON analysis prompt for one job.
+
+    The description is the cleaned text already stored on the Job row; this
+    function truncates it but never receives or emits raw HTML.
+    """
+    description = truncate_description(job.description)
+    requirements = "\n".join(f"- {r}" for r in job.requirements) or "- (none listed)"
+    preferred = (
+        "\n".join(f"- {r}" for r in job.preferred_qualifications)
+        or "- (none listed)"
+    )
+    skills = ", ".join(job.skills) or "(none listed)"
+
+    return (
+        "You are a co-op job relevance assistant for a University of Waterloo "
+        "Mechanical Engineering student. Assess how well the job below fits the "
+        "student's profile.\n\n"
+        "Return STRICT JSON ONLY (no markdown, no code fences, no prose before "
+        "or after). The JSON object MUST contain EXACTLY these keys and nothing "
+        "else:\n"
+        f"{_schema_block()}\n\n"
+        "Rules: never invent requirements; base evidence on the provided text; "
+        "if something is unknown say so in the relevant assessment and lower the "
+        "confidence; recommendation must be one of apply, maybe, or skip.\n\n"
+        "=== STUDENT PROFILE ===\n"
+        f"{build_profile_summary(profile)}\n\n"
+        "=== JOB ===\n"
+        f"Title: {job.title}\n"
+        f"Company: {job.company}\n"
+        f"Location: {job.location}\n"
+        f"Term/Season: {job.term_season}\n"
+        f"Duration: {job.duration_label}\n"
+        f"Citizenship requirement: {job.citizenship_requirement or 'unknown'}\n"
+        f"Work authorization: {job.work_authorization_requirement or 'unknown'}\n"
+        f"Visa sponsorship: {job.visa_sponsorship or 'unknown'}\n"
+        f"Sponsorship evidence: {job.sponsorship_evidence or '(none)'}\n"
+        f"Application URL: {job.application_url}\n"
+        f"Skills (parsed): {skills}\n\n"
+        "Requirements:\n"
+        f"{requirements}\n\n"
+        "Preferred qualifications:\n"
+        f"{preferred}\n\n"
+        "Description (cleaned text):\n"
+        f"{description}\n"
+    )

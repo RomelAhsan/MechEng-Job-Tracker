@@ -1,0 +1,53 @@
+# Fly.io deployment for MechEng-Job-Tracker (SPEC Phase 5).
+#
+# Two processes share one image (built from the repo Dockerfile):
+#   * web    -> the Streamlit dashboard, bound to 0.0.0.0:8080 (Fly's port).
+#   * worker -> the background polling scheduler enforcing <=1h freshness.
+# A single persistent volume holds the SQLite database so data survives
+# deploys/restarts, and DATABASE_URL points at the mounted path. The
+# release_command runs the Alembic migrations before each deploy goes live.
+#
+# Rename "app" below to your own unique Fly app name (or let `fly launch`
+# generate one). See DEPLOY.md for the exact step-by-step.
+
+app = "mecheng-job-tracker"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # SQLite lives on the mounted volume (see [mounts]) so it persists.
+  DATABASE_URL = "sqlite:////data/jobtracker.db"
+  # The scheduler must be ON for the worker process to poll.
+  SCHEDULER_ENABLED = "true"
+  # Email new matches right after each poll so the page reflects boards fast.
+  NOTIFY_ON_POLL = "true"
+
+# Run DB migrations before the new release is promoted.
+[deploy]
+  release_command = "python -m jobtracker init-db"
+
+# Two process groups, both built from the same image.
+[processes]
+  web = "streamlit run jobtracker/dashboard/app.py --server.port 8080 --server.address 0.0.0.0"
+  worker = "python -m jobtracker scheduler"
+
+# Public HTTPS front door -> only the web process serves HTTP.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+# Persistent volume for the SQLite database. Create it once with:
+#   fly volumes create jobtracker_data --size 1 --region yyz
+[mounts]
+  source = "jobtracker_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

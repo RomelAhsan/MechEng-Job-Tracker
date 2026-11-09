@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from jobtracker.db.models import Company, Job, SourceHealth
+from jobtracker.db.models import AiAnalysisCache, Company, Job, SourceHealth
 from jobtracker.services import health_service
 
 
@@ -78,6 +78,39 @@ def test_accuracy_report_flags_each_category(session: Session) -> None:
     assert "acme" in report.stale_sources
     assert "silent" in report.active_but_absent
     assert report.total_issues() > 0
+
+
+def test_accuracy_report_flags_low_confidence_ai(session: Session) -> None:
+    _company(session, "acme", enabled=True, active=True)
+    for job_id in ("j-low", "j-high", "j-override", "j-none"):
+        session.add(
+            Job(
+                job_id=job_id,
+                company_id="acme",
+                source_job_id=job_id,
+                title="Mechanical Intern",
+                status="active",
+                application_url=f"https://apply.example/{job_id}",
+                term_season="spring",
+                visa_sponsorship="provided",
+            )
+        )
+    # Low confidence -> flagged.
+    session.add(AiAnalysisCache(job_id="j-low", confidence=0.2, overridden=False))
+    # High confidence -> not flagged.
+    session.add(AiAnalysisCache(job_id="j-high", confidence=0.9, overridden=False))
+    # Low confidence but a manual override -> not flagged.
+    session.add(AiAnalysisCache(job_id="j-override", confidence=0.1, overridden=True))
+    # No confidence recorded -> not flagged.
+    session.add(AiAnalysisCache(job_id="j-none", confidence=None, overridden=False))
+    session.flush()
+
+    report = health_service.accuracy_report(session)
+
+    assert report.low_confidence_ai == ["j-low"]
+    assert "j-high" not in report.low_confidence_ai
+    assert "j-override" not in report.low_confidence_ai
+    assert "j-none" not in report.low_confidence_ai
 
 
 def test_source_health_view_returns_rows(session: Session) -> None:

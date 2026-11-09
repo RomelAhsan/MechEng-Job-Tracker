@@ -11,7 +11,7 @@ All business logic lives here so the CLI and dashboard are thin callers.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -60,6 +60,41 @@ class TestSourceResult:
     ok: bool
     fetched: int = 0
     error: str | None = None
+
+
+@dataclass
+class ResolveCandidate:
+    """A candidate public-board URL probed by ``add_from_name``."""
+
+    ats: str
+    url: str
+
+
+@dataclass
+class AddByNameResult:
+    """Summary of an ``add_from_name`` call (graceful: never raises).
+
+    ``resolved`` is True when a public board returned real postings, its
+    identity was confirmed to match the typed name, and the company was
+    baseline-imported. When False, ``message`` explains why and the caller
+    (CLI / dashboard) should suggest the add-by-URL fallback.
+
+    ``needs_verification`` is True in the special case where a public board DID
+    return postings for the typed slug but its identity could NOT be confirmed
+    to belong to the typed company (a slug collision could attach an unrelated
+    org's board). In that case ``candidate_ats`` / ``candidate_url`` name the
+    board found so the caller can show a "verify this is correct" prompt and,
+    only on explicit confirmation, re-call with ``confirm=True`` to import it.
+    """
+
+    name: str
+    resolved: bool
+    message: str
+    add_result: AddResult | None = None
+    tried: list[str] = field(default_factory=list)
+    needs_verification: bool = False
+    candidate_ats: str | None = None
+    candidate_url: str | None = None
 
 
 def _apply_config(company: Company, config: CompanyConfig) -> None:
@@ -163,6 +198,237 @@ def add_from_url(
         ats=company.ats,
         board_token=company.board_token,
         baseline_jobs=detection.current_job_count,
+    )
+
+
+def name_candidates(name: str) -> list[ResolveCandidate]:
+    """Build the ordered list of public-board URLs to probe for ``name``.
+
+    We only probe ATSes whose public board is addressable by a plain slug:
+    Greenhouse, Lever, Ashby, and Workable. Workday is intentionally excluded
+    because its URL needs a verified ``tenant``/``data_center``/``site`` triple
+    that cannot be guessed from a name (guessing returns 404/422); users add
+    Workday employers via the careers-URL path instead.
+
+    Two slug spellings are tried (``acme-robotics`` and ``acmerobotics``) to
+    cover both common board-token conventions.
+    """
+    slug = _slugify(name)
+    compact = slug.replace("-", "")
+    slugs: list[str] = []
+    for candidate in (slug, compact):
+        if candidate and candidate not in slugs:
+            slugs.append(candidate)
+
+    candidates: list[ResolveCandidate] = []
+    for s in slugs:
+        candidates.append(ResolveCandidate("greenhouse", f"https://boards.greenhouse.io/{s}"))
+        candidates.append(ResolveCandidate("lever", f"https://jobs.lever.co/{s}"))
+        candidates.append(ResolveCandidate("ashby", f"https://jobs.ashbyhq.com/{s}"))
+        candidates.append(ResolveCandidate("workable", f"https://apply.workable.com/{s}"))
+    return candidates
+
+
+@dataclass
+class ProbeResult:
+    """Outcome of probing one candidate board (count + identity signal)."""
+
+    count: int
+    board_token: str | None = None
+    identity_confirmed: bool = False
+
+
+def _name_tokens(value: str) -> set[str]:
+    """Lowercase alphanumeric tokens of ``value`` (for board-identity checks)."""
+    compact = "".join(ch.lower() if ch.isalnum() else " " for ch in value)
+    return {t for t in compact.split() if t}
+
+
+def _board_identity_matches(
+    name: str, board_token: str | None, raw_jobs: list
+) -> bool:
+    """Heuristic: does the probed board plausibly belong to the typed ``name``?
+
+    Deterministic and ATS-agnostic. The board TOKEN alone is NOT a valid
+    identity signal here: we built the candidate URL from the typed slug, so a
+    token that equals the slug is circular (this is exactly the slug-collision
+    case the review flagged, e.g. typing "apple" hitting an unrelated
+    ``boards.greenhouse.io/apple``). Identity is therefore confirmed only from
+    board-derived content:
+
+    * a name token appears in a posting's apply/source URL host or path
+      (postings that link to the company's own ``careers.<name>.com`` domain or
+      carry the name in the path tie the board to the typed company); or
+    * a name token appears in a posting's company/employer metadata where the
+      ATS exposes it (``extra`` keys like ``company``/``companyName``).
+
+    When no such signal is present we return ``False`` so the caller asks the
+    user to verify rather than silently importing a possibly-wrong board.
+    """
+    name_toks = {t for t in _name_tokens(name) if len(t) >= 3}
+    if not name_toks:
+        return False
+
+    def _hit(text: str | None) -> bool:
+        if not text:
+            return False
+        lowered = text.lower()
+        return any(tok in lowered for tok in name_toks)
+
+    for raw in raw_jobs:
+        # URL-host/path signal.
+        for url in (
+            getattr(raw, "application_url", None),
+            getattr(raw, "source_url", None),
+        ):
+            if _hit(url):
+                return True
+        # Board/employer metadata signal, where the ATS exposes it.
+        extra = getattr(raw, "extra", None)
+        if isinstance(extra, dict):
+            for key in ("company", "companyName", "company_name", "employer"):
+                value = extra.get(key)
+                if isinstance(value, str) and _hit(value):
+                    return True
+    return False
+
+
+def _probe_candidate(
+    http: HttpClient, candidate: ResolveCandidate, name: str
+) -> ProbeResult:
+    """Fetch a candidate board and report count + whether identity is confirmed.
+
+    Fail-soft: connectivity/parse errors mean "this slug is not a live board",
+    so we return a zero-count result and move on rather than raising. When the
+    board returns postings we also run :func:`_board_identity_matches` so the
+    caller can refuse to silently import a slug-colliding, unrelated board.
+    """
+    detected = detect_ats(candidate.url)
+    if not detected.board_token:
+        return ProbeResult(count=0)
+    config = CompanyConfig(
+        id=_slugify(candidate.url),
+        name=candidate.url,
+        ats=detected.ats,
+        board_token=detected.board_token,
+        careers_url=candidate.url,
+    )
+    connector = get_connector(detected.ats, http)
+    if isinstance(connector, FallbackConnector):
+        return ProbeResult(count=0)
+    try:
+        raw_jobs = connector.fetch(config)
+    except Exception as exc:  # noqa: BLE001 - probe captures the failure.
+        logger.debug("Probe failed for %s: %r", candidate.url, exc)
+        return ProbeResult(count=0)
+    return ProbeResult(
+        count=len(raw_jobs),
+        board_token=detected.board_token,
+        identity_confirmed=_board_identity_matches(
+            name, detected.board_token, raw_jobs
+        ),
+    )
+
+
+def add_from_name(
+    session: Session,
+    name: str,
+    http: HttpClient,
+    *,
+    company_id: str | None = None,
+    priority: str = "medium",
+    confirm: bool = False,
+) -> AddByNameResult:
+    """Resolve a plain company name to a public board and baseline-import it.
+
+    Probes the known public ATS URL patterns for the name's slug
+    (:func:`name_candidates`), picks the FIRST that returns real postings, and
+    reuses :func:`add_from_url` (``baseline=True`` so existing jobs are marked
+    seen and never fire false 'new' notifications, per the SPEC ADD-COMPANY
+    ASSISTANT rules).
+
+    Board-identity safeguard: a non-empty board is only imported when its
+    identity is confirmed to belong to the typed name (see
+    :func:`_board_identity_matches`). A slug collision (e.g. typing "apple"
+    attaching an unrelated ``boards.greenhouse.io/apple``) is NOT silently
+    imported; instead the first such board is returned with
+    ``needs_verification=True`` and a "verify this is correct" message. The
+    caller can re-invoke with ``confirm=True`` to import it anyway.
+
+    Never raises: when nothing resolves it returns ``resolved=False`` with a
+    helpful message so the CLI/dashboard can tell the user to try the careers
+    URL directly.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return AddByNameResult(
+            name=name,
+            resolved=False,
+            message="Please provide a company name.",
+        )
+
+    tried: list[str] = []
+    unverified: ResolveCandidate | None = None
+    for candidate in name_candidates(cleaned):
+        tried.append(candidate.url)
+        probe = _probe_candidate(http, candidate, cleaned)
+        if probe.count <= 0:
+            continue
+        if not probe.identity_confirmed and not confirm:
+            # A live board exists for this slug but we cannot confirm it is the
+            # typed company. Remember the first such candidate and keep probing
+            # in case a later candidate IS a confident match.
+            if unverified is None:
+                unverified = candidate
+            continue
+        add_result = add_from_url(
+            session,
+            candidate.url,
+            http,
+            company_id=company_id or _slugify(cleaned),
+            name=cleaned,
+            priority=priority,
+        )
+        return AddByNameResult(
+            name=cleaned,
+            resolved=True,
+            message=(
+                f"Resolved '{cleaned}' to {add_result.ats} board "
+                f"{candidate.url}; baseline imported "
+                f"{add_result.baseline_jobs} jobs."
+            ),
+            add_result=add_result,
+            tried=tried,
+        )
+
+    if unverified is not None:
+        return AddByNameResult(
+            name=cleaned,
+            resolved=False,
+            needs_verification=True,
+            candidate_ats=unverified.ats,
+            candidate_url=unverified.url,
+            message=(
+                f"Found a public {unverified.ats} board at {unverified.url} for "
+                f"'{cleaned}', but could not confirm it belongs to that company "
+                "(board slugs can collide with an unrelated org). Verify this is "
+                "the correct board, then confirm to import it, or use 'Add a "
+                "company by careers URL' with the exact board link."
+            ),
+            tried=tried,
+        )
+
+    return AddByNameResult(
+        name=cleaned,
+        resolved=False,
+        message=(
+            f"Could not auto-resolve '{cleaned}' to a public job board "
+            "(Greenhouse / Lever / Ashby / Workable). Many employers (e.g. "
+            "Workday-based ones) need their exact careers URL. Try 'Add a "
+            "company by careers URL' with the board link from the company's "
+            "careers page."
+        ),
+        tried=tried,
     )
 
 

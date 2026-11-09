@@ -1,0 +1,19 @@
+{
+  "total": 3,
+  "jobPostings": [
+    {
+      "title": "Mechanical Design Engineer Intern",
+      "externalPath": "/job/US-CA-Santa-Clara/Mechanical-Design-Engineer-Intern_JR1001",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["JR1001"]
+    },
+    {
+      "title": "Thermal Systems Engineer",
+      "externalPath": "/job/US-TX-Austin/Thermal-Systems-Engineer_JR1002",
+      "locationsText": "Austin, TX",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["JR1002"]
+    }
+  ]
+}
