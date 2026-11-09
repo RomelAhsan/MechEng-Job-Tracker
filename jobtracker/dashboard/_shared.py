@@ -114,6 +114,34 @@ def _fmt_rel(value: datetime | None, ago: str | None) -> str:
     return f"{ago} ({absolute})" if ago else absolute
 
 
+def _run_ai_analysis(job_id: str, *, user_id: int | None = None) -> None:
+    """Thin wiring for the job-card AI button: run analysis and show the result.
+
+    Delegates all logic to the AI service. Never raises on a missing key: the
+    service returns an informative 'add a Gemini API key' result which is shown
+    as a warning with a link to the AI Analysis page.
+    """
+    import streamlit as st
+
+    from jobtracker.services import ai_service
+
+    with write_session_scope() as session:
+        result = ai_service.analyze_job(session, job_id, user_id=user_id)
+
+    if not result.available:
+        st.warning(result.message or "AI unavailable - add a Gemini API key.")
+        st.caption("Open the **AI Analysis** page to add a key and manage analyses.")
+        return
+
+    data = result.result
+    st.success(
+        f"AI: score {data.get('relevance_score')} · "
+        f"{data.get('recommendation')} · confidence {result.confidence}"
+    )
+    if data.get("explanation"):
+        st.caption(data["explanation"])
+
+
 def render_job_card(view: JobView, *, user_id: int | None = None) -> None:
     """Render a single job as a thin presentation card.
 
@@ -190,10 +218,11 @@ def render_job_card(view: JobView, *, user_id: int | None = None) -> None:
                 "Save", key=f"save-{view.job_id}", disabled=True,
                 help="Sign in to save jobs.",
             )
-        action_cols[1].button(
-            "AI analysis", key=f"ai-{view.job_id}", disabled=True,
-            help="AI analysis is available in a later phase.",
-        )
+        if action_cols[1].button(
+            "AI analysis", key=f"ai-{view.job_id}",
+            help="Run the built-in AI relevance engine on this job.",
+        ):
+            _run_ai_analysis(view.job_id, user_id=user_id)
 
         if view.skills:
             st.caption("Skills: " + ", ".join(view.skills))

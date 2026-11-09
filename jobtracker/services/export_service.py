@@ -179,6 +179,83 @@ def render(
     return _RENDERERS[fmt](rows, active_profile)
 
 
+def _collect_rows_for_job_ids(session: Session, job_ids: list[str]) -> list[dict[str, object]]:
+    """Collect export rows for an explicit list of job ids (any status)."""
+    if not job_ids:
+        return []
+    stmt = (
+        select(Job, Company.name)
+        .join(Company, Company.id == Job.company_id)
+        .where(Job.job_id.in_(job_ids))
+    )
+    by_id = {job.job_id: _job_row(job, name) for job, name in session.execute(stmt)}
+    # Preserve the caller's ordering.
+    return [by_id[jid] for jid in job_ids if jid in by_id]
+
+
+def collect_ai_export_rows(
+    session: Session,
+    *,
+    job_ids: list[str] | None = None,
+    filters: object | None = None,
+    user_id: int | None = None,
+    saved_only: bool = False,
+) -> list[dict[str, object]]:
+    """Collect export rows for the export-for-external-AI feature (SPEC).
+
+    Selection modes (mutually exclusive, evaluated in priority order):
+
+    * ``job_ids`` - one or many specific jobs,
+    * ``saved_only`` + ``user_id`` - all of the user's saved jobs,
+    * ``filters`` - all jobs matching a :class:`JobFilters` (dashboard filters),
+    * otherwise - all active jobs.
+
+    The rows carry every SPEC export field (company, title, location, term +
+    duration, citizenship/sponsorship, posted date, application URL, fit score,
+    full cleaned description, requirements, preferred qualifications, skills) so
+    the output is clean enough to paste into an external AI.
+    """
+    # Imported here to avoid a module-load import cycle with dashboard_service.
+    from jobtracker.services import dashboard_service
+
+    if job_ids:
+        return _collect_rows_for_job_ids(session, job_ids)
+
+    if saved_only and user_id is not None:
+        views = dashboard_service.list_saved_job_views(session, user_id)
+        return _collect_rows_for_job_ids(session, [v.job_id for v in views])
+
+    if filters is not None:
+        views = dashboard_service.list_jobs(session, filters, user_id=user_id)
+        return _collect_rows_for_job_ids(session, [v.job_id for v in views])
+
+    return collect_jobs(session)
+
+
+def render_ai_export(
+    session: Session,
+    fmt: str,
+    *,
+    profile: UserProfile | None = None,
+    job_ids: list[str] | None = None,
+    filters: object | None = None,
+    user_id: int | None = None,
+    saved_only: bool = False,
+) -> str:
+    """Render an export-for-external-AI artifact body for the selected jobs."""
+    if fmt not in _FORMATS:
+        raise ValueError(f"Unknown export format '{fmt}'; choose one of {_FORMATS}.")
+    active_profile = profile or load_user_profile(get_settings().user_file)
+    rows = collect_ai_export_rows(
+        session,
+        job_ids=job_ids,
+        filters=filters,
+        user_id=user_id,
+        saved_only=saved_only,
+    )
+    return _RENDERERS[fmt](rows, active_profile)
+
+
 def export(
     session: Session,
     fmt: str = "markdown",

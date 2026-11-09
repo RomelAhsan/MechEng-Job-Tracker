@@ -52,9 +52,15 @@ class Settings(BaseSettings):
     #: trigger prompt emails. Safe default OFF so plain CLI users are unchanged.
     notify_on_poll: bool = False
 
-    # AI provider (optional, unused in Phase 1)
+    # AI provider (optional, Phase 3). The app is KEY-READY: with no key the AI
+    # features degrade gracefully (an "add a Gemini API key" message) instead of
+    # crashing. Set ai_provider="gemini" and a REAL Google AI Studio key (looks
+    # like "AIza...") in ai_api_key to enable live analysis. The key is read
+    # only from env/.env and is never committed.
     ai_provider: str | None = None
     ai_api_key: str | None = None
+    #: Gemini model used for analysis when a key is configured.
+    ai_model: str = "gemini-1.5-flash"
 
     # HTTP / connectors
     http_timeout: float = 30.0

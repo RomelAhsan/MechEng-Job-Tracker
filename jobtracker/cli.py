@@ -265,9 +265,37 @@ def scheduler() -> None:
 
 
 @app.command("analyze")
-def analyze() -> None:
-    """AI analysis (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def analyze(
+    job_id: str = typer.Option(..., "--job", help="Job id to analyze with the AI engine"),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run even if a cached analysis exists"
+    ),
+) -> None:
+    """Run the AI relevance engine on one job (safe with no API key).
+
+    With no Gemini key configured this prints an informative 'add a key'
+    message instead of failing. With a key it analyzes the job, caches the
+    result (keyed by description + profile version), and prints a summary.
+    """
+    from jobtracker.services import ai_service
+
+    with _session_scope() as session:
+        result = ai_service.analyze_job(session, job_id, force=force)
+
+    if not result.available:
+        typer.echo(result.message or "AI unavailable - add a Gemini API key.")
+        return
+
+    data = result.result
+    source = "cache" if result.cache_hit else f"{result.provider}:{result.model}"
+    typer.echo(
+        f"analyze {job_id} [{source}]: "
+        f"score={data.get('relevance_score')} "
+        f"recommendation={data.get('recommendation')} "
+        f"confidence={result.confidence}"
+    )
+    if data.get("explanation"):
+        typer.echo(f"  {data['explanation']}")
 
 
 @app.command("notify")

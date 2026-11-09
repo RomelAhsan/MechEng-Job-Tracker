@@ -291,3 +291,47 @@ class NotificationLog(Base):
     to_email: Mapped[str | None] = mapped_column(String, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# --- Phase 3 AI relevance engine (design 3.7) ---
+
+
+class AiAnalysisCache(Base):
+    """Cached AI relevance analysis for a job, keyed for invalidation (Phase 3).
+
+    The cache key is ``(job_id, description_hash, profile_version)`` so a cached
+    row is reused only while the job description AND the user's profile are
+    unchanged; editing the profile (which bumps ``profile_version``) or a
+    changed description invalidates it and triggers a fresh analysis. ``result``
+    holds the parsed strict-JSON SPEC fields; ``confidence`` mirrors the parsed
+    confidence for quick ranking. Token usage is stored for cost visibility.
+    ``overridden`` marks a manual override of the AI classification.
+    """
+
+    __tablename__ = "ai_analysis_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id",
+            "description_hash",
+            "profile_version",
+            name="uq_ai_cache_key",
+        ),
+        Index("ix_ai_cache_job", "job_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("jobs.job_id"), nullable=True
+    )
+    description_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

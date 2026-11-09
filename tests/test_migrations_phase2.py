@@ -46,15 +46,19 @@ def test_upgrade_head_on_fresh_db(
         # FEAT-005 notification_log dedup/history columns.
         notif_cols = {c["name"] for c in inspector.get_columns("notification_log")}
         assert {"rule", "company_id", "subject", "to_email"} <= notif_cols
+        # FEAT-006 AI analysis cache table + cache-key columns.
+        assert "ai_analysis_cache" in tables
+        ai_cols = {c["name"] for c in inspector.get_columns("ai_analysis_cache")}
+        assert {"job_id", "description_hash", "profile_version", "result"} <= ai_cols
     finally:
         engine.dispose()
 
 
-def test_head_is_notifications_revision() -> None:
-    # FEAT-005 chained 0003_notifications after 0002_phase2_accounts, so the
-    # head advances. Later features chain 0004_* after this.
+def test_head_is_ai_cache_revision() -> None:
+    # FEAT-006 chained 0004_ai_cache after 0003_notifications, so the head
+    # advances again. Later features chain 0005_* after this.
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_current_head() == "0003_notifications"
+    assert script.get_current_head() == "0004_ai_cache"
 
 
 def test_downgrade_roundtrip(

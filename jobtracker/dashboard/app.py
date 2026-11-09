@@ -13,6 +13,7 @@ import streamlit as st
 
 from jobtracker.dashboard._shared import seed_profile_data, write_session_scope
 from jobtracker.dashboard.pages import (
+    ai_analysis,
     all_internships,
     companies,
     notifications,
@@ -102,6 +103,7 @@ def main() -> None:
         st.Page(pipeline.render, title="Saved / Pipeline"),
         st.Page(companies.render, title="Companies"),
         st.Page(source_health.render, title="Source Health"),
+        st.Page(ai_analysis.render, title="AI Analysis"),
         st.Page(profile.render, title="My Profile"),
         st.Page(notifications.render, title="Notifications"),
     ]
