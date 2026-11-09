@@ -11,7 +11,7 @@ All business logic lives here so the CLI and dashboard are thin callers.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -60,6 +60,30 @@ class TestSourceResult:
     ok: bool
     fetched: int = 0
     error: str | None = None
+
+
+@dataclass
+class ResolveCandidate:
+    """A candidate public-board URL probed by ``add_from_name``."""
+
+    ats: str
+    url: str
+
+
+@dataclass
+class AddByNameResult:
+    """Summary of an ``add_from_name`` call (graceful: never raises).
+
+    ``resolved`` is True when a public board returned real postings and the
+    company was baseline-imported. When False, ``message`` explains why and the
+    caller (CLI / dashboard) should suggest the add-by-URL fallback.
+    """
+
+    name: str
+    resolved: bool
+    message: str
+    add_result: AddResult | None = None
+    tried: list[str] = field(default_factory=list)
 
 
 def _apply_config(company: Company, config: CompanyConfig) -> None:
@@ -163,6 +187,128 @@ def add_from_url(
         ats=company.ats,
         board_token=company.board_token,
         baseline_jobs=detection.current_job_count,
+    )
+
+
+def name_candidates(name: str) -> list[ResolveCandidate]:
+    """Build the ordered list of public-board URLs to probe for ``name``.
+
+    We only probe ATSes whose public board is addressable by a plain slug:
+    Greenhouse, Lever, Ashby, and Workable. Workday is intentionally excluded
+    because its URL needs a verified ``tenant``/``data_center``/``site`` triple
+    that cannot be guessed from a name (guessing returns 404/422); users add
+    Workday employers via the careers-URL path instead.
+
+    Two slug spellings are tried (``acme-robotics`` and ``acmerobotics``) to
+    cover both common board-token conventions.
+    """
+    slug = _slugify(name)
+    compact = slug.replace("-", "")
+    slugs: list[str] = []
+    for candidate in (slug, compact):
+        if candidate and candidate not in slugs:
+            slugs.append(candidate)
+
+    candidates: list[ResolveCandidate] = []
+    for s in slugs:
+        candidates.append(ResolveCandidate("greenhouse", f"https://boards.greenhouse.io/{s}"))
+        candidates.append(ResolveCandidate("lever", f"https://jobs.lever.co/{s}"))
+        candidates.append(ResolveCandidate("ashby", f"https://jobs.ashbyhq.com/{s}"))
+        candidates.append(ResolveCandidate("workable", f"https://apply.workable.com/{s}"))
+    return candidates
+
+
+def _probe_candidate(http: HttpClient, candidate: ResolveCandidate) -> int:
+    """Fetch a candidate board and return the posting count (0 on any failure).
+
+    Fail-soft: connectivity/parse errors mean "this slug is not a live board",
+    so we return 0 and move on rather than raising.
+    """
+    detected = detect_ats(candidate.url)
+    if not detected.board_token:
+        return 0
+    config = CompanyConfig(
+        id=_slugify(candidate.url),
+        name=candidate.url,
+        ats=detected.ats,
+        board_token=detected.board_token,
+        careers_url=candidate.url,
+    )
+    connector = get_connector(detected.ats, http)
+    if isinstance(connector, FallbackConnector):
+        return 0
+    try:
+        raw_jobs = connector.fetch(config)
+    except Exception as exc:  # noqa: BLE001 - probe captures the failure.
+        logger.debug("Probe failed for %s: %r", candidate.url, exc)
+        return 0
+    return len(raw_jobs)
+
+
+def add_from_name(
+    session: Session,
+    name: str,
+    http: HttpClient,
+    *,
+    company_id: str | None = None,
+    priority: str = "medium",
+) -> AddByNameResult:
+    """Resolve a plain company name to a public board and baseline-import it.
+
+    Probes the known public ATS URL patterns for the name's slug
+    (:func:`name_candidates`), picks the FIRST that returns real postings, and
+    reuses :func:`add_from_url` (``baseline=True`` so existing jobs are marked
+    seen and never fire false 'new' notifications, per the SPEC ADD-COMPANY
+    ASSISTANT rules).
+
+    Never raises: when nothing resolves it returns ``resolved=False`` with a
+    helpful message so the CLI/dashboard can tell the user to try the careers
+    URL directly.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return AddByNameResult(
+            name=name,
+            resolved=False,
+            message="Please provide a company name.",
+        )
+
+    tried: list[str] = []
+    for candidate in name_candidates(cleaned):
+        tried.append(candidate.url)
+        count = _probe_candidate(http, candidate)
+        if count > 0:
+            add_result = add_from_url(
+                session,
+                candidate.url,
+                http,
+                company_id=company_id or _slugify(cleaned),
+                name=cleaned,
+                priority=priority,
+            )
+            return AddByNameResult(
+                name=cleaned,
+                resolved=True,
+                message=(
+                    f"Resolved '{cleaned}' to {add_result.ats} board "
+                    f"{candidate.url}; baseline imported "
+                    f"{add_result.baseline_jobs} jobs."
+                ),
+                add_result=add_result,
+                tried=tried,
+            )
+
+    return AddByNameResult(
+        name=cleaned,
+        resolved=False,
+        message=(
+            f"Could not auto-resolve '{cleaned}' to a public job board "
+            "(Greenhouse / Lever / Ashby / Workable). Many employers (e.g. "
+            "Workday-based ones) need their exact careers URL. Try 'Add a "
+            "company by careers URL' with the board link from the company's "
+            "careers page."
+        ),
+        tried=tried,
     )
 
 

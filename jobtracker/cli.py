@@ -1,8 +1,10 @@
 """Typer CLI exposing the full SPEC command surface.
 
-Phase 1 implements scaffolding stubs for most commands; the deferred
-commands (analyze/notify/digest) only print an 'available in a later
-phase' message. ``init-db`` runs Alembic migrations programmatically.
+Every SPEC command is implemented: company management (including
+add-company-by-name), ingestion + screening, the AI ``analyze`` engine, email
+``notify``/``digest``, the background ``scheduler``, ``backup``/``restore``, and
+the Streamlit ``dashboard``. ``init-db`` runs Alembic migrations
+programmatically.
 """
 
 from __future__ import annotations
@@ -19,8 +21,6 @@ from jobtracker.logging_setup import configure
 from jobtracker.settings import get_settings
 
 app = typer.Typer(help="Waterloo Mechanical Engineering Co-op Job Tracker")
-
-_LATER_PHASE_MSG = "This command is available in a later phase."
 
 
 @contextmanager
@@ -76,6 +76,31 @@ def add_company(
         f"Added {result.company_id} (ats={result.ats}, token={result.board_token}); "
         f"baseline imported {result.baseline_jobs} jobs."
     )
+
+
+@app.command("add-company-by-name")
+def add_company_by_name(
+    name: str = typer.Argument(..., help="Company name to resolve, e.g. 'Toyota'"),
+    company_id: str | None = typer.Option(None, "--id", help="Explicit company id/slug"),
+    priority: str = typer.Option("medium", "--priority", help="high|medium|low"),
+) -> None:
+    """Add a company by NAME: probe public boards and baseline-import the match.
+
+    Resolves the name to a public Greenhouse/Lever/Ashby/Workable board, picks
+    the first that returns real postings, and baseline-imports it. If nothing
+    resolves it prints a helpful message (use ``add-company`` with the careers
+    URL instead).
+    """
+    from jobtracker.connectors.http import HttpClient
+    from jobtracker.services import company_service
+
+    with _session_scope() as session, HttpClient() as http:
+        result = company_service.add_from_name(
+            session, name, http, company_id=company_id, priority=priority
+        )
+    typer.echo(result.message)
+    if not result.resolved:
+        raise typer.Exit(code=1)
 
 
 def _sync_seed(session: Session) -> None:
@@ -222,6 +247,7 @@ def health() -> None:
     typer.echo(f"  missing application URL: {len(report.missing_application_url)}")
     typer.echo(f"  unknown term: {len(report.unknown_term)}")
     typer.echo(f"  unknown sponsorship: {len(report.unknown_sponsorship)}")
+    typer.echo(f"  low-confidence AI: {len(report.low_confidence_ai)}")
     typer.echo(f"  stale sources: {len(report.stale_sources)}")
     typer.echo(f"  removed-but-present: {len(report.removed_but_present)}")
     typer.echo(f"  active-but-absent: {len(report.active_but_absent)}")
@@ -242,6 +268,37 @@ def test_source(company_id: str = typer.Argument(...)) -> None:
     )
     if result.error:
         typer.echo(f"  error: {result.error}")
+
+
+@app.command("backup")
+def backup(
+    output: str = typer.Option(..., "--output", help="Destination path for the backup"),
+) -> None:
+    """Back up the SQLite database to ``--output`` (a safe file copy).
+
+    Uses SQLite's online backup API so it is safe even while the app is
+    running. Only SQLite URLs are supported; for other databases use that
+    engine's native dump tooling.
+    """
+    from jobtracker.services import backup_service
+
+    dest = backup_service.backup_database(get_settings(), output)
+    typer.echo(f"Backed up database to {dest}.")
+
+
+@app.command("restore")
+def restore(
+    input: str = typer.Option(..., "--input", help="Path to a backup to restore from"),
+) -> None:
+    """Restore the SQLite database from a backup created by ``backup``.
+
+    Overwrites the current database file with the backup. Stop the app/scheduler
+    first. Only SQLite URLs are supported.
+    """
+    from jobtracker.services import backup_service
+
+    dest = backup_service.restore_database(get_settings(), input)
+    typer.echo(f"Restored database from backup into {dest}.")
 
 
 @app.command("scheduler")

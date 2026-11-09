@@ -39,6 +39,13 @@ def _add_company(url: str, company_id: str, name: str, priority: str) -> str:
     )
 
 
+def _add_company_by_name(name: str, priority: str):
+    from jobtracker.connectors.http import HttpClient
+
+    with write_session_scope() as session, HttpClient() as http:
+        return company_service.add_from_name(session, name, http, priority=priority)
+
+
 def render() -> None:
     require_login()
     admin = is_admin()
@@ -54,6 +61,27 @@ def render() -> None:
     if not admin:
         _render_company_table()
         return
+
+    with st.form("add-company-by-name"):
+        st.subheader("Add a company by name")
+        st.caption(
+            "Type a company name (e.g. 'Toyota'). We probe public job boards "
+            "(Greenhouse / Lever / Ashby / Workable) and import the first match. "
+            "If it cannot be auto-resolved, use the careers-URL form below."
+        )
+        name_cols = st.columns([3, 1])
+        by_name = name_cols[0].text_input("Company name", key="add-by-name-input")
+        name_priority = name_cols[1].selectbox(
+            "Priority", _PRIORITIES, index=1, key="add-by-name-priority"
+        )
+        name_submitted = st.form_submit_button("Resolve and add")
+    if name_submitted and by_name:
+        with st.spinner(f"Searching public boards for '{by_name}'..."):
+            result = _add_company_by_name(by_name, name_priority)
+        if result.resolved:
+            st.success(result.message)
+        else:
+            st.warning(result.message)
 
     with st.form("add-company"):
         st.subheader("Add a company by careers URL")

@@ -2,8 +2,9 @@
 
 Exposes the per-company source-health rows and an accuracy report that flags
 data-quality issues the dashboard surfaces: jobs with a missing application
-URL, unknown term, unknown sponsorship, sources not checked recently (stale),
-and detection mismatches (removed-but-present / active-but-absent).
+URL, unknown term, unknown sponsorship, low-confidence AI classifications,
+sources not checked recently (stale), and detection mismatches
+(removed-but-present / active-but-absent).
 """
 
 from __future__ import annotations
@@ -14,10 +15,13 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from jobtracker.db.models import Company, Job, SourceHealth
+from jobtracker.db.models import AiAnalysisCache, Company, Job, SourceHealth
 
 #: A source whose last check is older than this is considered stale.
 DEFAULT_STALE_AFTER = timedelta(days=1)
+
+#: AI analyses whose confidence is below this threshold are flagged for review.
+DEFAULT_LOW_AI_CONFIDENCE = 0.5
 
 
 @dataclass
@@ -27,6 +31,7 @@ class AccuracyReport:
     missing_application_url: list[str] = field(default_factory=list)
     unknown_term: list[str] = field(default_factory=list)
     unknown_sponsorship: list[str] = field(default_factory=list)
+    low_confidence_ai: list[str] = field(default_factory=list)
     stale_sources: list[str] = field(default_factory=list)
     removed_but_present: list[str] = field(default_factory=list)
     active_but_absent: list[str] = field(default_factory=list)
@@ -36,6 +41,7 @@ class AccuracyReport:
             len(self.missing_application_url)
             + len(self.unknown_term)
             + len(self.unknown_sponsorship)
+            + len(self.low_confidence_ai)
             + len(self.stale_sources)
             + len(self.removed_but_present)
             + len(self.active_but_absent)
@@ -56,13 +62,19 @@ def _as_aware(value: datetime) -> datetime:
 
 
 def accuracy_report(
-    session: Session, *, stale_after: timedelta = DEFAULT_STALE_AFTER
+    session: Session,
+    *,
+    stale_after: timedelta = DEFAULT_STALE_AFTER,
+    low_ai_confidence: float = DEFAULT_LOW_AI_CONFIDENCE,
 ) -> AccuracyReport:
     """Build the accuracy report across all jobs and sources.
 
     * ``missing_application_url`` -- active jobs with no application URL.
     * ``unknown_term`` -- active jobs whose term season is unknown/missing.
     * ``unknown_sponsorship`` -- active jobs whose sponsorship is unknown/missing.
+    * ``low_confidence_ai`` -- active jobs whose AI relevance analysis (Phase 3)
+      has a confidence below ``low_ai_confidence`` and is not a manual override,
+      so a human should double-check the recommendation.
     * ``stale_sources`` -- sources not checked within ``stale_after``.
     * ``removed_but_present`` -- jobs marked removed that still have no
       ``removed_at`` timestamp (inconsistent state).
@@ -83,6 +95,16 @@ def accuracy_report(
             report.unknown_sponsorship.append(job.job_id)
         if job.status == "removed" and job.removed_at is None:
             report.removed_but_present.append(job.job_id)
+
+    # Low-confidence AI classifications: a cached analysis exists but the model
+    # was not confident, so flag the job for a human review (overrides excluded).
+    flagged_low_ai: set[str] = set()
+    for cache in session.scalars(select(AiAnalysisCache)):
+        if cache.job_id is None or cache.overridden:
+            continue
+        if cache.confidence is not None and cache.confidence < low_ai_confidence:
+            flagged_low_ai.add(cache.job_id)
+    report.low_confidence_ai.extend(sorted(flagged_low_ai))
 
     for health in session.scalars(select(SourceHealth)):
         last = health.last_checked_at

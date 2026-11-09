@@ -6,9 +6,19 @@ applies deterministic, evidence-first screening for a University of Waterloo
 Mechanical Engineering student, and surfaces everything through a Streamlit
 dashboard.
 
-This repository currently implements **Phase 0 and Phase 1**. AI screening,
-resume generation, authentication/multi-user, Discord notifications, and
-deployment are intentionally deferred to later phases.
+This repository implements the project **end to end (SPEC Phases 0–5)**:
+connectors for many public ATS boards, a background polling scheduler with a
+`<=1h` freshness guarantee, user accounts + personalization, email
+notifications with per-filter/per-page subscriptions, a key-ready Gemini AI
+relevance engine (with a graceful no-key fallback), a Resume Studio with strict
+fact preservation, add-company-by-name, and a Fly.io deployment path with CI.
+
+> **"The link didn't work" — why, and how to actually open it.** The dashboard
+> is a **Streamlit app**. By default it runs **only on your own machine** at
+> <http://localhost:8501> (there is no public server unless *you* deploy it).
+> Run `python -m jobtracker dashboard` and open that localhost URL. To get a
+> real public `https://…` URL, deploy to your own Fly.io account — see
+> [DEPLOY.md](DEPLOY.md).
 
 ## Requirements
 
@@ -25,15 +35,26 @@ pip install -e ".[dev]"
 Copy `.env.example` to `.env` to override defaults (database URL, log level,
 HTTP settings, etc.). **No AI/API key is required to run anything.**
 
-## Quick start
+## Quick start (local, one command at a time)
 
 ```bash
 python -m jobtracker init-db                 # create/upgrade the schema
 python -m jobtracker run                     # ingest enabled companies (one-shot)
 python -m jobtracker screen                  # classify/extract/score stored jobs
-python -m jobtracker dashboard               # open the Streamlit dashboard
-python -m jobtracker scheduler               # run the background polling worker
+python -m jobtracker dashboard               # open http://localhost:8501
 ```
+
+Leave the last command running and open **<http://localhost:8501>** in your
+browser. For continuously fresh data, run the background worker in a second
+terminal:
+
+```bash
+python -m jobtracker scheduler               # polls each board on its interval (<=1h)
+```
+
+This is a **local-only** app: the dashboard URL above is served by Streamlit on
+your machine, not by any hosted server. See [DEPLOY.md](DEPLOY.md) for both the
+reliable localhost path and the Fly.io live-URL path.
 
 ## Keeping jobs fresh: the scheduler
 
@@ -130,21 +151,27 @@ one source failing never aborts a run; failures and health are recorded in
 ## Dashboard
 
 `python -m jobtracker dashboard` shells out to
-`streamlit run jobtracker/dashboard/app.py`. The dashboard has four Phase-1
-pages, each a thin view over the service layer:
+`streamlit run jobtracker/dashboard/app.py` (locally at
+<http://localhost:8501>). The dashboard is gated behind a lightweight login
+(see [Accounts & personalization](#accounts--personalization)); every page is a
+thin view over the service layer:
 
 1. **Relevant For Me** (default) — strong + possible matches with new-job
-   badges, fit score, concerns, apply + source links, and filters (term,
-   duration, location, country, remote, employment type, sponsorship
-   eligibility, freshness window, fit-score range, classification). Save / AI
-   buttons are rendered but disabled (later phases).
+   badges, fit score, concerns, apply + source links, freshness timestamps, and
+   filters (term, duration, location, country, remote, employment type,
+   sponsorship eligibility, freshness window, fit-score range, classification).
 2. **All Internships** — the full active database with advanced filters, a
    "Show removed (archive)" toggle, source info, and direct links.
-3. **Companies** — a table with source-health summary, an add-by-URL form, and
-   edit / enable / disable / remove plus priority / interval controls (all
-   writes go through `company_service`).
+3. **Companies** — a table with source-health summary, an **add-company-by-name**
+   form, an add-by-URL form, and edit / enable / disable / remove plus priority
+   / interval controls (all writes go through `company_service`).
 4. **Source Health** — last check times, run counts, errors, source status, the
-   quarantine queue, and the accuracy report.
+   quarantine queue, and the full accuracy report.
+5. **Saved & Pipeline** — per-user saved jobs and application-status tracking.
+6. **AI Analysis** — the key-ready Gemini relevance engine (see
+   [AI relevance engine](#ai-relevance-engine)).
+7. **Resume Studio** — upload a master resume and generate a tailored version
+   with strict fact preservation (see [Resume Studio](#resume-studio)).
 
 ### ITAR / US-citizen-only filtering
 
@@ -208,11 +235,62 @@ two YAML files:
 - `config/user.yaml` — the single implicit Phase-1 user profile (citizenship,
   work authorization, available terms, preferred duration, interests, skills).
 
-Key settings (`jobtracker/settings.py`): `database_url` (default
-`sqlite:///./jobtracker.db`), `log_level`, `log_file`, `companies_file`,
-`user_file`, `http_timeout`, `http_max_retries`, `rate_limit_per_host`. The
-`discord_webhook_url` and `ai_provider`/`ai_api_key` settings exist but are
-unused in Phase 1.
+Key settings (`jobtracker/settings.py`, all overridable via `.env` — see
+`.env.example` for the full list):
+
+- **Core:** `database_url` (default `sqlite:///./jobtracker.db`), `log_level`,
+  `log_file`, `companies_file`, `user_file`.
+- **HTTP/connectors:** `http_timeout`, `http_max_retries`, `rate_limit_per_host`.
+- **Scheduler:** `scheduler_enabled`, `scheduler_max_interval_minutes` (default
+  60), `scheduler_high/medium/low_interval_minutes`.
+- **Email:** `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`,
+  `smtp_use_tls`, `notify_from_email`, `notify_default_to_email`,
+  `notify_outbox_dir`, `notify_on_poll`.
+- **AI (optional):** `ai_provider`, `ai_api_key`, `ai_model`.
+
+## Accounts & personalization
+
+The dashboard requires a login. The **first** account to register becomes the
+`admin` (the owner of the shared company registry — only an admin can add / edit
+/ remove companies); everyone after is a `member`. Passwords are bcrypt-hashed
+and never stored or logged. Each user has their own saved jobs, application
+pipeline, saved filters/subscriptions, and resume studio data. Personalization
+(interests, skills, available terms, preferred duration) feeds the fit score and
+the AI prompt; editing a profile bumps its `profile_version`, which invalidates
+that user's cached AI analyses.
+
+## AI relevance engine
+
+The app is **key-ready** for Google's Gemini. With **no key configured** the AI
+Analysis page and the `analyze` command degrade gracefully with an
+"add a Gemini API key" message and never crash — every other feature works
+without AI.
+
+To enable live analysis:
+
+1. Create a free API key at **Google AI Studio**
+   (<https://aistudio.google.com/app/apikey>). A valid Gemini key looks like
+   **`AIza…`** (about 39 characters).
+2. Set `AI_PROVIDER=gemini`, `AI_API_KEY=AIza…`, and optionally `AI_MODEL`
+   (default `gemini-1.5-flash`) in your `.env` (or as Fly secrets).
+
+> A token like `AQ.Ab8RN6…` is an OAuth/other token, **not** a Gemini API key,
+> and will almost certainly fail to authenticate — use an `AIza…` key. Your key
+> is read only from the environment / gitignored `.env` and is never committed.
+
+Analyses are cached by `(job_id, description_hash, profile_version)` so repeated
+views are free; low-confidence results are surfaced on the Source Health
+accuracy report for a human to double-check.
+
+## Resume Studio
+
+Upload your master resume (PDF/DOCX/text) once; the Resume Studio reorders and
+emphasizes the content that is **already there** to match a target job. It
+**never invents** experience, skills, dates, employers, schools, tools, or
+metrics: a deterministic `verify_claims` pass strips any generated line not
+grounded in your master resume (SPEC CORE RULE #7/#8), and the page reports a
+change log plus a "missing keywords" list (suggestions only, never inserted).
+Export the tailored resume to PDF/Markdown/text.
 
 ## CLI commands
 
@@ -220,6 +298,7 @@ unused in Phase 1.
 | --- | --- |
 | `init-db` | Create or upgrade the database to the latest Alembic revision (idempotent). |
 | `add-company URL [--id --name --priority]` | Detect a company's ATS from a careers URL, save it, and baseline-import. |
+| `add-company-by-name NAME [--id --priority]` | Resolve a plain company name to a public board and baseline-import (see below). |
 | `list-companies` | List tracked companies (seeds from `companies.yaml` first). |
 | `enable-company ID` | Re-enable a company for ingestion. |
 | `disable-company ID` | Disable a company (kept in the database). |
@@ -233,9 +312,39 @@ unused in Phase 1.
 | `scheduler` | Run the foreground polling worker (immediate first poll, then interval polling capped at ~1h). |
 | `notify [--since-hours N]` | Email users about recent new/changed/removed jobs and source failures (deduped). |
 | `digest [--since-hours N]` | Email each subscribed user a periodic summary of recent matching jobs. |
-| `analyze` | Registered but deferred — prints an "available in a later phase" message. |
+| `analyze --job ID [--force]` | Run the Gemini AI relevance engine on one job (safe with no key). |
+| `backup --output PATH` | Back up the SQLite database (safe online copy). |
+| `restore --input PATH` | Restore the SQLite database from a backup. |
 
 Run `python -m jobtracker --help` for the full surface.
+
+### Add a company by name
+
+```bash
+python -m jobtracker add-company-by-name "Toyota"
+```
+
+This probes the known public board patterns for the name's slug
+(`boards.greenhouse.io/{slug}`, `jobs.lever.co/{slug}`, `jobs.ashbyhq.com/{slug}`,
+`apply.workable.com/{slug}`), picks the **first that returns real postings**, and
+baseline-imports it (existing jobs are marked *seen*, so you never get a flood of
+false "new" notifications). If the name cannot be auto-resolved — common for
+large Workday-based employers whose URL needs a verified tenant/site that cannot
+be guessed — it prints a helpful message telling you to use `add-company` with
+the careers URL instead. The same flow is available on the **Companies** page in
+the dashboard.
+
+### Backup & restore
+
+The database is a single SQLite file, so backups are a safe file copy (via
+SQLite's online backup API, so `backup` is safe even while the app is running):
+
+```bash
+python -m jobtracker backup --output ./backups/jobtracker.db
+python -m jobtracker restore --input ./backups/jobtracker.db   # stop the app first
+```
+
+On Fly.io you can also use volume snapshots; see [DEPLOY.md](DEPLOY.md).
 
 ### Email notifications
 
@@ -270,19 +379,38 @@ Unit tests perform no live network I/O; ATS responses are mocked with fixtures.
   running `pip install -e ".[dev]"`.
 - **CLI reports no companies / no jobs** — run `python -m jobtracker init-db`,
   then `run`, then `screen`; `list-companies`/`run` seed from `companies.yaml`.
-- **A company shows `requires_fallback`** — its ATS is not one of the four
-  supported connectors yet; it is tracked but not fetched until a connector
-  exists (expected for `ats: html` entries).
+- **A company shows `requires_fallback`** — its ATS is not one of the supported
+  connectors yet; it is tracked but not fetched until a connector exists
+  (expected for `ats: html` entries).
+- **`add-company-by-name` says it couldn't resolve a company** — the employer
+  likely uses a Workday board (or a non-public ATS) whose URL can't be guessed;
+  use `add-company` with the careers URL from the company's careers page.
+- **AI Analysis shows "add a Gemini API key"** — set `AI_PROVIDER=gemini` and a
+  real `AIza…` key in `.env`; see [AI relevance engine](#ai-relevance-engine).
 - **The dashboard shows empty pages** — point `DATABASE_URL` at a database that
   has been through `init-db` + `run` + `screen`, or seed data first.
 - **`streamlit` command not found** — ensure the virtual environment is active;
   Streamlit is installed as a runtime dependency.
 
-## Phase boundary
+## Deployment
 
-Phase 0/1 covers the project scaffold, database schema and migrations, the CLI
-surface, connectors, normalization, detection, deterministic screening, export,
-source health, and the Streamlit dashboard. AI relevance/analysis, resume
-generation, authentication/multi-user, Discord notifications, and deployment /
-scheduling are deferred to later phases. Multi-user tables exist as nullable,
-unused scaffolds and are not wired to any authentication.
+- **Local** (recommended for a single user): the Quick start above runs
+  everything on your machine; the dashboard is at <http://localhost:8501>.
+- **Fly.io** (a real public HTTPS URL): deploy to your own Fly.io account with
+  the root `Dockerfile` + `fly.toml`. It runs two processes — a **web** process
+  (Streamlit bound to `0.0.0.0:8080`) and a **worker** process (the polling
+  scheduler) — with a persistent volume for the SQLite database and a
+  release-command that applies migrations. There is **no hosted URL until you
+  deploy it yourself**. Full step-by-step (install flyctl, create the volume,
+  set secrets, deploy, scale the worker) is in **[DEPLOY.md](DEPLOY.md)**.
+
+Continuous integration runs ruff + the full pytest suite on every push/PR via
+`.github/workflows/ci.yml` (no live network).
+
+## Status
+
+All SPEC phases (0–5) are implemented: scaffold, schema/migrations, connectors,
+normalization, detection, deterministic screening, export, source health, the
+Streamlit dashboard, the polling scheduler, user accounts + personalization,
+email notifications, the key-ready AI relevance engine, Resume Studio,
+add-company-by-name, and the Fly.io deployment path with CI.
