@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import session_scope, write_session_scope
+from jobtracker.dashboard._shared import (
+    is_admin,
+    require_login,
+    session_scope,
+    write_session_scope,
+)
 from jobtracker.services import company_service, dashboard_service
 
 _PRIORITIES = ("high", "medium", "low")
@@ -35,8 +40,20 @@ def _add_company(url: str, company_id: str, name: str, priority: str) -> str:
 
 
 def render() -> None:
+    require_login()
+    admin = is_admin()
     st.title("Companies")
     st.caption("Tracked employers, their ATS source health, and controls.")
+
+    if not admin:
+        st.info(
+            "The company registry is shared. Only an admin can add, edit, or "
+            "remove companies; you can view all tracked companies below."
+        )
+
+    if not admin:
+        _render_company_table()
+        return
 
     with st.form("add-company"):
         st.subheader("Add a company by careers URL")
@@ -52,6 +69,12 @@ def render() -> None:
         except Exception as exc:  # noqa: BLE001 - surface add errors to the user.
             st.error(f"Could not add company: {exc}")
 
+    _render_company_table(with_edit=True)
+
+
+def _render_company_table(*, with_edit: bool = False) -> None:
+    import streamlit as st
+
     st.divider()
     st.subheader("Tracked companies")
 
@@ -59,7 +82,7 @@ def render() -> None:
         companies = dashboard_service.list_company_views(session)
 
     if not companies:
-        st.info("No companies tracked yet. Add one above.")
+        st.info("No companies tracked yet.")
         return
 
     st.dataframe(
@@ -81,6 +104,9 @@ def render() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    if not with_edit:
+        return
 
     st.subheader("Edit a company")
     ids = [c.id for c in companies]

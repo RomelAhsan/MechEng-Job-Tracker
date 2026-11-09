@@ -23,6 +23,7 @@ dependencies = [
     "streamlit",
     "apscheduler",
     "passlib[bcrypt]",
+    "bcrypt",
     "jinja2",
     "pypdf",
     "python-docx",

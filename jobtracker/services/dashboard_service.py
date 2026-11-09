@@ -72,6 +72,11 @@ class JobView:
     requirements: list[str]
     preferred_qualifications: list[str]
     skills: list[str]
+    #: Per-user personalization (Phase 2). Populated only when a ``user_id`` is
+    #: passed to the listing functions; otherwise ``is_saved`` is False and
+    #: ``application_status`` is None so single-profile callers are unchanged.
+    is_saved: bool = False
+    application_status: str | None = None
 
 
 @dataclass
@@ -95,6 +100,9 @@ class JobFilters:
     freshness_days: int | None = None
     include_removed: bool = False
     only_new: bool = False
+    #: Per-user scoping (Phase 2): keep only jobs the current user has saved.
+    #: Ignored unless the listing call is passed a ``user_id``.
+    only_saved: bool = False
 
 
 @dataclass
@@ -211,6 +219,8 @@ def _to_view(
     now: datetime,
     new_window: timedelta,
     source_last_checked_at: datetime | None = None,
+    is_saved: bool = False,
+    application_status: str | None = None,
 ) -> JobView:
     reasons = list(job.classification_reasons or [])
     concerns = _derive_concerns(job)
@@ -247,6 +257,8 @@ def _to_view(
         requirements=list(job.requirements or []),
         preferred_qualifications=list(job.preferred_qualifications or []),
         skills=list(job.skills or []),
+        is_saved=is_saved,
+        application_status=application_status,
     )
 
 
@@ -298,12 +310,17 @@ def list_jobs(
     filters: JobFilters | None = None,
     *,
     new_window: timedelta = DEFAULT_NEW_WINDOW,
+    user_id: int | None = None,
 ) -> list[JobView]:
     """Return job views matching ``filters``, newest-and-best first.
 
     By default only ``active`` jobs are returned; set ``include_removed`` to
     also include removed/expired postings (the All Internships archive toggle).
     Results are ordered by fit score (desc) then first-seen (desc).
+
+    When ``user_id`` is given, each view is enriched with the user's
+    ``is_saved`` flag and ``application_status``. When ``None`` (the default)
+    the behaviour is identical to the Phase-1 single-profile dashboard.
     """
     filters = filters or JobFilters()
     now = _now()
@@ -324,6 +341,16 @@ def list_jobs(
             select(SourceHealth.company_id, SourceHealth.last_checked_at)
         )
     }
+
+    saved_ids: set[str] = set()
+    status_by_job: dict[str, str] = {}
+    if user_id is not None:
+        # Imported lazily to avoid a service import cycle at module load.
+        from jobtracker.services import saved_job_service
+
+        saved_ids = saved_job_service.list_saved_job_ids(session, user_id)
+        status_by_job = saved_job_service.status_map(session, user_id)
+
     views = [
         _to_view(
             job,
@@ -331,10 +358,14 @@ def list_jobs(
             now=now,
             new_window=new_window,
             source_last_checked_at=last_checked.get(job.company_id),
+            is_saved=job.job_id in saved_ids,
+            application_status=status_by_job.get(job.job_id),
         )
         for job, name in session.execute(stmt)
     ]
     views = [v for v in views if _matches(v, filters, now=now)]
+    if filters.only_saved:
+        views = [v for v in views if v.is_saved]
     views.sort(key=_rank_key, reverse=True)
     return views
 
@@ -344,6 +375,7 @@ def list_relevant_jobs(
     filters: JobFilters | None = None,
     *,
     new_window: timedelta = DEFAULT_NEW_WINDOW,
+    user_id: int | None = None,
 ) -> list[JobView]:
     """Active strong + possible matches for the 'Relevant For Me' page."""
     filters = filters or JobFilters()
@@ -354,7 +386,22 @@ def list_relevant_jobs(
     else:
         filters.classifications = list(RELEVANT_CLASSIFICATIONS)
     filters.include_removed = False
-    return list_jobs(session, filters, new_window=new_window)
+    return list_jobs(session, filters, new_window=new_window, user_id=user_id)
+
+
+def list_saved_job_views(
+    session: Session,
+    user_id: int,
+    *,
+    new_window: timedelta = DEFAULT_NEW_WINDOW,
+) -> list[JobView]:
+    """Return the user's saved jobs as views, including removed postings.
+
+    Used by the Saved / Application Pipeline page so hearted jobs remain
+    visible even after a posting is removed from its board.
+    """
+    filters = JobFilters(include_removed=True, only_saved=True)
+    return list_jobs(session, filters, new_window=new_window, user_id=user_id)
 
 
 def filter_options(session: Session) -> FilterOptions:

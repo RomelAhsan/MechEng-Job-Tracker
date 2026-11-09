@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import session_scope
+from jobtracker.dashboard._shared import require_login, session_scope
 from jobtracker.services import dashboard_service, health_service
 
 
@@ -17,6 +17,7 @@ def _fmt(value) -> str:
 
 
 def render() -> None:
+    require_login()
     st.title("Source Health")
     st.caption("Per-source check status, the accuracy report, and the quarantine queue.")
 

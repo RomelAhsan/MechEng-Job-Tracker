@@ -167,45 +167,71 @@ class QuarantineItem(Base):
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-# --- Scaffolds: nullable, unused, not wired to auth (design 3.6) ---
+# --- Phase 2 multi-user accounts and personalization (design 3.6) ---
 
 
 class User(Base):
-    """Multi-user scaffold (unused in Phase 1)."""
+    """A registered dashboard user (Phase 2).
+
+    ``role`` is ``admin`` or ``member``; the first registered user becomes the
+    admin (owner of the shared company registry). Passwords are bcrypt-hashed
+    and stored only in ``password_hash`` (never plaintext).
+    """
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SavedJob(Base):
-    """Saved-job scaffold (unused in Phase 1)."""
+    """A job hearted/saved by a user (Phase 2)."""
 
     __tablename__ = "saved_jobs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_saved_jobs_user_job"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ApplicationStatus(Base):
-    """Application-status scaffold (unused in Phase 1)."""
+    """A user's application-pipeline state for one job (Phase 2).
+
+    ``status`` is one of saved|researching|applying|submitted|interviewing|
+    offer|rejected|closed.
+    """
 
     __tablename__ = "application_status"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_application_status_user_job"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserProfile(Base):
-    """User-profile scaffold with profile_version (unused in Phase 1)."""
+    """Per-user profile JSON + version (Phase 2).
+
+    ``data`` holds the serialized :class:`jobtracker.schemas.user_profile.UserProfile`.
+    ``profile_version`` is bumped on every edit so Phase 3 AI caches invalidate.
+    ``notification_prefs`` holds per-user notification settings (channel, email,
+    opt-ins) used by FEAT-005 email subscriptions.
+    """
 
     __tablename__ = "user_profiles"
 
@@ -213,7 +239,26 @@ class UserProfile(Base):
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     data: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    notification_prefs: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SavedFilter(Base):
+    """A user's named saved filter / subscription (Phase 2 -> FEAT-005).
+
+    Stores the serialized :class:`JobFilters` as ``filter_json``. When
+    ``notify`` is set, FEAT-005 emails matching new postings via ``channel``.
+    """
+
+    __tablename__ = "saved_filters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    filter_json: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    notify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationLog(Base):

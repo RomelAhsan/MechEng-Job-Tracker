@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import render_job_card, session_scope
+from jobtracker.dashboard._shared import render_job_card, require_login, session_scope
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobFilters
 
 
 def render() -> None:
+    user_id = require_login()
     st.title("Relevant For Me")
     st.caption(
         "Strong and possible mechanical-engineering matches for your profile. "
@@ -67,8 +68,8 @@ def render() -> None:
             freshness_days=int(freshness_days) or None,
             only_new=only_new,
         )
-        jobs = dashboard_service.list_relevant_jobs(session, filters)
+        jobs = dashboard_service.list_relevant_jobs(session, filters, user_id=user_id)
 
         st.write(f"**{len(jobs)}** matching postings.")
         for view in jobs:
-            render_job_card(view)
+            render_job_card(view, user_id=user_id)

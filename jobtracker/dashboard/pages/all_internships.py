@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from jobtracker.dashboard._shared import render_job_card, session_scope
+from jobtracker.dashboard._shared import render_job_card, require_login, session_scope
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobFilters
 
 
 def render() -> None:
+    user_id = require_login()
     st.title("All Internships")
     st.caption(
         "Every tracked posting, including ambiguous and lower-fit roles. "
@@ -60,8 +61,8 @@ def render() -> None:
             only_new=only_new,
             include_removed=include_removed,
         )
-        jobs = dashboard_service.list_jobs(session, filters)
+        jobs = dashboard_service.list_jobs(session, filters, user_id=user_id)
 
         st.write(f"**{len(jobs)}** postings{' (incl. removed)' if include_removed else ''}.")
         for view in jobs:
-            render_job_card(view)
+            render_job_card(view, user_id=user_id)
