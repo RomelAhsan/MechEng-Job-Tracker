@@ -244,6 +244,26 @@ def test_source(company_id: str = typer.Argument(...)) -> None:
         typer.echo(f"  error: {result.error}")
 
 
+@app.command("scheduler")
+def scheduler() -> None:
+    """Run the foreground polling scheduler (dedicated worker process).
+
+    Does an immediate first poll of all enabled + active companies on startup,
+    then polls each company on its effective interval (priority default, capped
+    so no company ever waits longer than ~1 hour). Runs until interrupted. Keep
+    the one-shot ``run`` command for manual single passes.
+    """
+    from jobtracker.scheduler import run_scheduler
+
+    settings = get_settings()
+    typer.echo(
+        "Starting scheduler (immediate first poll, then interval polling; "
+        f"max interval {settings.scheduler_max_interval_minutes} min). "
+        "Press Ctrl+C to stop."
+    )
+    run_scheduler(settings)
+
+
 @app.command("analyze")
 def analyze() -> None:
     """AI analysis (deferred to a later phase)."""

@@ -60,6 +60,18 @@ def _fmt_dt(value: datetime | None) -> str:
     return value.strftime("%Y-%m-%d") if value is not None else "—"
 
 
+def _fmt_dt_time(value: datetime | None) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if value is not None else "—"
+
+
+def _fmt_rel(value: datetime | None, ago: str | None) -> str:
+    """Combine a relative label with an absolute timestamp for transparency."""
+    if value is None:
+        return "—"
+    absolute = _fmt_dt_time(value)
+    return f"{ago} ({absolute})" if ago else absolute
+
+
 def render_job_card(view: JobView) -> None:
     """Render a single job as a thin presentation card.
 
@@ -91,6 +103,14 @@ def render_job_card(view: JobView) -> None:
         st.write(
             f"**Eligibility:** {view.eligibility_status or 'unknown'}  |  "
             f"**Sponsorship:** {view.visa_sponsorship}"
+        )
+        # Freshness / timing transparency: boards do not push to us, so we show
+        # exactly when the posting was first seen and when its source was last
+        # polled (relative + absolute).
+        st.caption(
+            f"First seen: {_fmt_rel(view.first_seen_at, view.first_seen_ago)}  |  "
+            f"Source last checked: "
+            f"{_fmt_rel(view.source_last_checked_at, view.source_last_checked_ago)}"
         )
 
         if view.concerns:

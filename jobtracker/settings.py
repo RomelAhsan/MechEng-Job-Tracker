@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     http_max_retries: int = 3
     rate_limit_per_host: float = 2.0
 
+    # Scheduler (FEAT-003). Boards do not push to us, so we poll as fast as is
+    # safe and surface accurate timestamps. Defaults are SAFE: the scheduler is
+    # OFF unless explicitly enabled, so plain CLI users see no behaviour change.
+    scheduler_enabled: bool = False
+    #: Hard ceiling applied to every company's effective interval so NO company
+    #: ever waits longer than ~1 hour between polls.
+    scheduler_max_interval_minutes: int = 60
+    #: Per-priority default polling intervals (minutes), used when a company has
+    #: no explicit ``check_interval_minutes``. Each is still capped at
+    #: ``scheduler_max_interval_minutes``.
+    scheduler_high_interval_minutes: int = 15
+    scheduler_medium_interval_minutes: int = 45
+    scheduler_low_interval_minutes: int = 60
+
 
 def get_settings() -> Settings:
     """Return a freshly loaded settings instance."""

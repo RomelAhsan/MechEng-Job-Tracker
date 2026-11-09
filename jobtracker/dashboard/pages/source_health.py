@@ -20,6 +20,14 @@ def render() -> None:
     st.title("Source Health")
     st.caption("Per-source check status, the accuracy report, and the quarantine queue.")
 
+    st.caption(
+        "Boards do not push new postings to us, so the scheduler polls each "
+        "source on its interval (capped at ~1 hour). These timestamps show "
+        "exactly when each source was last polled."
+    )
+    if st.button("Refresh", key="refresh-source-health"):
+        st.rerun()
+
     with session_scope() as session:
         rows = health_service.source_health(session)
         report = health_service.accuracy_report(session)
@@ -34,6 +42,7 @@ def render() -> None:
                     "status": r.last_status or "—",
                     "last checked": _fmt(r.last_checked_at),
                     "last success": _fmt(r.last_successful_check_at),
+                    "last change": _fmt(r.last_change_detected_at),
                     "jobs": r.current_job_count,
                     "new (last run)": r.new_jobs_last_run,
                     "removed (last run)": r.removed_jobs_last_run,

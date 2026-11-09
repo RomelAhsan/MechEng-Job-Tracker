@@ -21,6 +21,14 @@ def render() -> None:
         "Adjacent roles appear as possible matches and are never hidden."
     )
 
+    cols = st.columns([4, 1])
+    cols[0].caption(
+        "New postings appear here after each scheduler poll (≤1h per source). "
+        "Use Refresh to re-query after a poll."
+    )
+    if cols[1].button("Refresh", key="refresh-relevant"):
+        st.rerun()
+
     with session_scope() as session:
         options = dashboard_service.filter_options(session)
 

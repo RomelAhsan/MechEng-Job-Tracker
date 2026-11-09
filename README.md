@@ -29,10 +29,67 @@ HTTP settings, etc.). **No AI/API key is required to run anything.**
 
 ```bash
 python -m jobtracker init-db                 # create/upgrade the schema
-python -m jobtracker run                     # ingest enabled companies
+python -m jobtracker run                     # ingest enabled companies (one-shot)
 python -m jobtracker screen                  # classify/extract/score stored jobs
 python -m jobtracker dashboard               # open the Streamlit dashboard
+python -m jobtracker scheduler               # run the background polling worker
 ```
+
+## Keeping jobs fresh: the scheduler
+
+ATS job boards (Greenhouse, Lever, Workday, …) **do not push** new postings to
+us — there is no webhook or feed that notifies us the instant a job goes live.
+The only way to discover a new posting is to **poll** the board and compare it
+to what we saw last time. True "instant" delivery is therefore impossible; what
+we can do is poll as fast as is safe and show accurate timestamps so you always
+know how fresh the data is.
+
+`python -m jobtracker scheduler` runs a foreground worker (an APScheduler
+`BlockingScheduler`, suitable for a dedicated Fly.io `worker` process) that:
+
+1. Does an **immediate first poll** of every enabled + active company on
+   startup, so the dashboard is populated promptly.
+2. Then polls each company on its **effective interval**, computed as:
+
+   ```
+   effective_interval = min(
+       company.check_interval_minutes OR the priority default,
+       scheduler_max_interval_minutes,   # default 60
+   )
+   ```
+
+   Priority defaults are **high = 15 min, medium = 45 min, low = 60 min**, and
+   every value is capped at `scheduler_max_interval_minutes` (default **60**),
+   so **no company ever waits longer than ~1 hour** between polls. A company can
+   set an explicit `check_interval_minutes` to poll faster; it is still capped
+   at the global maximum.
+
+Each poll is **fail-soft per company**: one source failing never stops the
+scheduler, and the failure is recorded against `source_health`. New/changed
+jobs are screened automatically as part of each poll.
+
+The scheduler is **off by default** (`scheduler_enabled=False`) so plain CLI
+users see no behaviour change; the one-shot `run` command is unchanged. The
+scheduling decisions are pure functions (`compute_interval`, `build_jobs` in
+`jobtracker/scheduler/runner.py`) so they are unit-tested without real timers,
+threads, or network.
+
+### Seeing freshness on the dashboard
+
+Because we poll rather than receive pushes, the dashboard makes timing
+transparent instead of pretending it is instant:
+
+- Each job card shows **Posted**, **First seen** (when *we* first observed it,
+  relative + absolute), and **Source last checked**.
+- The **Source Health** page shows, per source, `last_checked_at`,
+  `last_successful_check_at`, `last_change_detected_at`, new/removed counts for
+  the last run, the current job count, and the last error.
+- A **Refresh** button re-queries after a poll so new jobs appear promptly.
+
+Relevant settings (see `jobtracker/settings.py`, all overridable via `.env`):
+`scheduler_enabled`, `scheduler_max_interval_minutes`,
+`scheduler_high_interval_minutes`, `scheduler_medium_interval_minutes`,
+`scheduler_low_interval_minutes`.
 
 ## Architecture overview
 

@@ -62,6 +62,12 @@ class JobView:
     posted_at: datetime | None
     first_seen_at: datetime | None
     is_new: bool
+    #: Presentation-ready freshness fields (computed in the service, not the
+    #: view): how long ago the job was first seen, and how long ago its source
+    #: was last polled. ``source_last_checked_at`` comes from SourceHealth.
+    first_seen_ago: str | None
+    source_last_checked_at: datetime | None
+    source_last_checked_ago: str | None
     description: str
     requirements: list[str]
     preferred_qualifications: list[str]
@@ -120,6 +126,13 @@ class CompanyView:
     active_job_count: int
     last_status: str | None
     last_checked_at: datetime | None
+    last_successful_check_at: datetime | None
+    last_change_detected_at: datetime | None
+    last_checked_ago: str | None
+    new_jobs_last_run: int | None
+    removed_jobs_last_run: int | None
+    current_job_count: int | None
+    last_error: str | None
     error_count: int
 
 
@@ -141,6 +154,30 @@ def _now() -> datetime:
 
 def _as_aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def humanize_ago(value: datetime | None, *, now: datetime | None = None) -> str | None:
+    """Return a compact relative-time label (e.g. ``"3h ago"``) or ``None``.
+
+    Presentation-ready freshness helper kept in the service so the view layer
+    stays thin. Negative deltas (clock skew / future timestamps) render as
+    ``"just now"``.
+    """
+    if value is None:
+        return None
+    now = now or _now()
+    delta = now - _as_aware(value)
+    seconds = delta.total_seconds()
+    if seconds < 60:
+        return "just now"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
 
 
 def _is_new(first_seen_at: datetime | None, *, window: timedelta, now: datetime) -> bool:
@@ -167,7 +204,14 @@ def _derive_concerns(job: Job) -> list[str]:
     return concerns
 
 
-def _to_view(job: Job, company_name: str, *, now: datetime, new_window: timedelta) -> JobView:
+def _to_view(
+    job: Job,
+    company_name: str,
+    *,
+    now: datetime,
+    new_window: timedelta,
+    source_last_checked_at: datetime | None = None,
+) -> JobView:
     reasons = list(job.classification_reasons or [])
     concerns = _derive_concerns(job)
     return JobView(
@@ -196,6 +240,9 @@ def _to_view(job: Job, company_name: str, *, now: datetime, new_window: timedelt
         posted_at=job.posted_at,
         first_seen_at=job.first_seen_at,
         is_new=_is_new(job.first_seen_at, window=new_window, now=now),
+        first_seen_ago=humanize_ago(job.first_seen_at, now=now),
+        source_last_checked_at=source_last_checked_at,
+        source_last_checked_ago=humanize_ago(source_last_checked_at, now=now),
         description=job.description or "",
         requirements=list(job.requirements or []),
         preferred_qualifications=list(job.preferred_qualifications or []),
@@ -271,8 +318,20 @@ def list_jobs(
         | Job.eligibility_status.is_(None)
     )
 
+    last_checked = {
+        company_id: checked_at
+        for company_id, checked_at in session.execute(
+            select(SourceHealth.company_id, SourceHealth.last_checked_at)
+        )
+    }
     views = [
-        _to_view(job, name, now=now, new_window=new_window)
+        _to_view(
+            job,
+            name,
+            now=now,
+            new_window=new_window,
+            source_last_checked_at=last_checked.get(job.company_id),
+        )
         for job, name in session.execute(stmt)
     ]
     views = [v for v in views if _matches(v, filters, now=now)]
@@ -344,6 +403,7 @@ def list_company_views(session: Session) -> list[CompanyView]:
             ).all()
         )
         health = session.get(SourceHealth, company.id)
+        now = _now()
         views.append(
             CompanyView(
                 id=company.id,
@@ -358,6 +418,19 @@ def list_company_views(session: Session) -> list[CompanyView]:
                 active_job_count=active_count,
                 last_status=health.last_status if health else None,
                 last_checked_at=health.last_checked_at if health else None,
+                last_successful_check_at=(
+                    health.last_successful_check_at if health else None
+                ),
+                last_change_detected_at=(
+                    health.last_change_detected_at if health else None
+                ),
+                last_checked_ago=humanize_ago(
+                    health.last_checked_at if health else None, now=now
+                ),
+                new_jobs_last_run=health.new_jobs_last_run if health else None,
+                removed_jobs_last_run=health.removed_jobs_last_run if health else None,
+                current_job_count=health.current_job_count if health else None,
+                last_error=health.last_error if health else None,
                 error_count=(health.error_count or 0) if health else 0,
             )
         )
