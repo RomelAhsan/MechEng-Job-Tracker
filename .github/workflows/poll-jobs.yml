@@ -1,0 +1,132 @@
+# Scheduled job poller + emailer.
+#
+# Runs on GitHub's servers, so jobs keep updating and emails keep arriving with
+# nothing running on your own computer.
+#
+# Cadence: every 2 hours. This fits the free GitHub Actions allowance for a
+# PRIVATE repository (2,000 minutes/month). If you make the repository public,
+# Actions minutes are unlimited and you can change the cron below to '0 * * * *'
+# for hourly polling.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   NOTIFY_EMAIL     your Gmail address (where job alerts are sent)
+#   SMTP_USERNAME    the same Gmail address
+#   SMTP_PASSWORD    a Gmail App Password (NOT your Google password)
+#   USER_PASSWORD    any password you pick for the tracker's own account
+# Optional:
+#   AI_API_KEY       a Google AI Studio key (starts with AIza) to enable AI
+#
+# With no secrets set the run still succeeds: emails are written to an
+# "outbox" artifact instead of being sent, so nothing breaks.
+name: Poll job boards
+
+on:
+  schedule:
+    # Every 2 hours, on the hour (UTC).
+    - cron: "0 */2 * * *"
+  # Adds a "Run workflow" button so you can trigger a poll on demand.
+  workflow_dispatch:
+
+# Never let two polls overlap: they would fight over the same database.
+concurrency:
+  group: poll-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # Secrets are read here at the job level. The `secrets` context is NOT
+    # available in a step-level `if`, so the steps below gate on `env` instead.
+    # Absent secrets resolve to empty strings, which puts the notifier into its
+    # safe outbox mode rather than failing the run.
+    env:
+      DATABASE_URL: sqlite:///./jobtracker.db
+      SMTP_HOST: ${{ secrets.SMTP_USERNAME && 'smtp.gmail.com' || '' }}
+      SMTP_PORT: "587"
+      SMTP_USE_TLS: "true"
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      NOTIFY_FROM_EMAIL: ${{ secrets.SMTP_USERNAME }}
+      NOTIFY_DEFAULT_TO_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+      NOTIFY_OUTBOX_DIR: output/outbox
+      # AI is optional; a blank provider keeps the key-ready fallback.
+      AI_PROVIDER: ${{ secrets.AI_API_KEY && 'gemini' || '' }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      # Consumed by the `create-user` bootstrap step.
+      JOBTRACKER_USER_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+      JOBTRACKER_USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install the application
+        run: pip install -e .
+
+      # The database carries the "already seen" history that makes new-job
+      # detection (and therefore new-job emails) possible. Restoring the most
+      # recent copy means each run only reports genuinely new postings.
+      - name: Restore the job database
+        uses: actions/cache/restore@v4
+        with:
+          path: jobtracker.db
+          key: jobtracker-db-${{ github.run_id }}
+          restore-keys: |
+            jobtracker-db-
+
+      - name: Apply database migrations
+        run: python -m jobtracker init-db
+
+      # Notifications are per-user, so an account must exist for mail to have a
+      # recipient. Idempotent: a no-op once the account is there.
+      - name: Ensure the notification account exists
+        if: env.JOBTRACKER_USER_EMAIL != '' && env.JOBTRACKER_USER_PASSWORD != ''
+        run: python -m jobtracker create-user
+
+      - name: Poll every enabled job board
+        run: python -m jobtracker run
+
+      - name: Screen and score the postings
+        run: python -m jobtracker screen
+
+      - name: Email newly found matches
+        run: python -m jobtracker notify --since-hours 6
+
+      - name: Build a browsable job list
+        run: |
+          python -m jobtracker export --format markdown --output output/jobs.md
+          python -m jobtracker export --format csv --output output/jobs.csv
+
+      - name: Report source health
+        run: python -m jobtracker health
+
+      # Saved under a fresh key each run; the restore step above picks up the
+      # newest one. Runs even on failure so a partial poll is not lost.
+      - name: Save the job database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: jobtracker.db
+          key: jobtracker-db-${{ github.run_id }}
+
+      # Download this from the run page to read your jobs without any hosting.
+      # In outbox mode the rendered emails show up here too.
+      - name: Upload the job list and outbox
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobs
+          path: output/
+          if-no-files-found: ignore
+          retention-days: 14

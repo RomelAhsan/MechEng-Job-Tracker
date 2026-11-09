@@ -1,5 +1,10 @@
 # MechEng-Job-Tracker
 
+> ### 👉 New here? Read **[START_HERE.md](START_HERE.md)** instead.
+> It is a four-step, browser-only setup (no terminal) that gets job alerts
+> emailed to your Gmail every 2 hours, collected on GitHub's servers so your own
+> computer does not need to be on. This README is the full technical reference.
+
 A local-first tracker for mechanical-engineering co-op / internship postings. It
 aggregates company career pages (ATS boards) into one searchable SQLite database,
 applies deterministic, evidence-first screening for a University of Waterloo
