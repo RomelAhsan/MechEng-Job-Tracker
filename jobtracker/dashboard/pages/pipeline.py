@@ -12,7 +12,7 @@ from datetime import UTC, datetime, time
 import streamlit as st
 
 from jobtracker.dashboard._shared import render_job_card, require_login, write_session_scope
-from jobtracker.services import dashboard_service, saved_job_service
+from jobtracker.services import dashboard_service, resume_service, saved_job_service
 from jobtracker.services.saved_job_service import PIPELINE_STATUSES
 
 
@@ -21,7 +21,8 @@ def render() -> None:
     st.title("Saved / Application Pipeline")
     st.caption(
         "Jobs you have hearted. Track each application's status, add notes, and "
-        "set a deadline. Resume drafts arrive in a later phase."
+        "set a deadline. Generate a tailored resume for any saved job from the "
+        "**Resume Studio** page."
     )
 
     with write_session_scope() as session:
@@ -47,6 +48,19 @@ def render() -> None:
                 expanded=False,
             ):
                 render_job_card(view, user_id=user_id)
+
+                draft = resume_service.get_generated_for_job(
+                    session, user_id, view.job_id
+                )
+                if draft is not None:
+                    st.caption(
+                        "📄 A tailored resume draft exists for this job. "
+                        "Download or regenerate it in **Resume Studio**."
+                    )
+                else:
+                    st.caption(
+                        "📄 No tailored resume yet. Create one in **Resume Studio**."
+                    )
 
                 with st.form(f"pipeline-{view.job_id}"):
                     status = st.selectbox(

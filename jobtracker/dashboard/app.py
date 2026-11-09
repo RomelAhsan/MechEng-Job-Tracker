@@ -20,6 +20,7 @@ from jobtracker.dashboard.pages import (
     pipeline,
     profile,
     relevant,
+    resume_studio,
     source_health,
 )
 from jobtracker.services import auth_service
@@ -104,6 +105,7 @@ def main() -> None:
         st.Page(companies.render, title="Companies"),
         st.Page(source_health.render, title="Source Health"),
         st.Page(ai_analysis.render, title="AI Analysis"),
+        st.Page(resume_studio.render, title="Resume Studio"),
         st.Page(profile.render, title="My Profile"),
         st.Page(notifications.render, title="Notifications"),
     ]

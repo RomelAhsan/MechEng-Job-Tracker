@@ -50,15 +50,21 @@ def test_upgrade_head_on_fresh_db(
         assert "ai_analysis_cache" in tables
         ai_cols = {c["name"] for c in inspector.get_columns("ai_analysis_cache")}
         assert {"job_id", "description_hash", "profile_version", "result"} <= ai_cols
+        # FEAT-007 Resume Studio tables + key columns.
+        assert {"master_resumes", "generated_resumes"} <= tables
+        mr_cols = {c["name"] for c in inspector.get_columns("master_resumes")}
+        assert {"original_base64", "raw_text", "parsed_sections"} <= mr_cols
+        gr_cols = {c["name"] for c in inspector.get_columns("generated_resumes")}
+        assert {"markdown", "json_sections", "pdf_base64", "change_log"} <= gr_cols
     finally:
         engine.dispose()
 
 
-def test_head_is_ai_cache_revision() -> None:
-    # FEAT-006 chained 0004_ai_cache after 0003_notifications, so the head
-    # advances again. Later features chain 0005_* after this.
+def test_head_is_resume_revision() -> None:
+    # FEAT-007 chained 0005_resume after 0004_ai_cache, so the head advances
+    # again. Later features chain 0006_* after this.
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_current_head() == "0004_ai_cache"
+    assert script.get_current_head() == "0005_resume"
 
 
 def test_downgrade_roundtrip(

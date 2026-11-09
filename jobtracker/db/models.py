@@ -335,3 +335,66 @@ class AiAnalysisCache(Base):
     overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# --- Phase 4 Resume Studio (design 3.8) ---
+
+
+class MasterResume(Base):
+    """A user's uploaded master resume (Phase 4, SPEC CORE RULE #7/#8).
+
+    The ORIGINAL uploaded file is preserved untouched: its bytes are stored
+    base64-encoded in ``original_base64`` (a portable Text column, so the SQLite
+    dev DB stays PostgreSQL-compatible and no native BLOB handling is needed).
+    ``parsed_sections`` holds the structured SPEC sections extracted by
+    :mod:`jobtracker.resume.parser`; ``raw_text`` is the extracted plain text.
+    Tailored resumes are always generated from this grounded structure, never
+    from invented content.
+    """
+
+    __tablename__ = "master_resumes"
+    __table_args__ = (Index("ix_master_resumes_user", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    original_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parsed_sections: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GeneratedResume(Base):
+    """A tailored resume generated for one saved job (Phase 4).
+
+    Stores the Markdown source, the structured JSON sections, and the ATS PDF
+    (base64 in a portable Text column). ``change_log`` records what was
+    reordered/emphasized and ``missing_keywords`` lists job keywords the user
+    lacks evidence for (suggestions only, never auto-inserted). Every stored
+    draft has passed the deterministic ``verify_claims`` fact-preservation gate.
+    """
+
+    __tablename__ = "generated_resumes"
+    __table_args__ = (
+        Index("ix_generated_resumes_user", "user_id"),
+        Index("ix_generated_resumes_job", "job_id"),
+        UniqueConstraint(
+            "user_id", "job_id", "master_resume_id", name="uq_generated_resume_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    master_resume_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("master_resumes.id"), nullable=True
+    )
+    markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    json_sections: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
+    pdf_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_log: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    missing_keywords: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    matched_keywords: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
