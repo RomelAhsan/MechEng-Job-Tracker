@@ -21,6 +21,13 @@ dependencies = [
     "pyyaml",
     "typer",
     "streamlit",
+    "apscheduler",
+    "passlib[bcrypt]",
+    "jinja2",
+    "pypdf",
+    "python-docx",
+    "reportlab",
+    "markdown",
 ]
 
 [project.optional-dependencies]
