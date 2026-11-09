@@ -1,0 +1,15 @@
+{{ intro }}
+
+{% for item in items %}
+----------------------------------------
+{{ item.title }} — {{ item.company_name }}
+Why: {{ item.reason }}
+Location: {{ item.location or "—" }}
+Term: {{ item.term_season }}   Duration: {{ item.duration }}
+Fit score: {{ item.fit_score if item.fit_score is not none else "—" }}
+Apply: {{ item.application_url or "(no direct link)" }}
+{% endfor %}
+----------------------------------------
+
+You are receiving this because you enabled job notifications in the
+MechEng Job Tracker. Manage your subscriptions on the Notifications page.

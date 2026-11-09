@@ -230,9 +230,29 @@ unused in Phase 1.
 | `dashboard` | Launch the Streamlit dashboard. |
 | `health` | Print source health and the accuracy report. |
 | `test-source ID` | Probe a single company's source connectivity (fail-soft). |
-| `analyze` / `notify` / `digest` | Registered but deferred — print an "available in a later phase" message. |
+| `scheduler` | Run the foreground polling worker (immediate first poll, then interval polling capped at ~1h). |
+| `notify [--since-hours N]` | Email users about recent new/changed/removed jobs and source failures (deduped). |
+| `digest [--since-hours N]` | Email each subscribed user a periodic summary of recent matching jobs. |
+| `analyze` | Registered but deferred — prints an "available in a later phase" message. |
 
 Run `python -m jobtracker --help` for the full surface.
+
+### Email notifications
+
+`notify` and `digest` evaluate each user's saved-filter subscriptions and
+notification preferences and email new matching jobs. Every email lists the
+direct application URL plus company, title, location, term, duration, fit
+score, and reason, and no job is ever emailed twice for the same rule (dedup
+via `notification_log`).
+
+Delivery is provider-agnostic SMTP. **With no SMTP credentials configured the
+notifier runs in a safe "outbox" mode**: rendered emails are written to
+`NOTIFY_OUTBOX_DIR` (default `output/outbox/`) and recorded in `notification_log`
+instead of being sent — nothing crashes and no credentials are required. To send
+real email, set `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD` (see
+`.env.example`). For Gmail use an **App Password** (not your account password)
+with `smtp.gmail.com:587` and TLS on. Enable `NOTIFY_ON_POLL=true` to have the
+scheduler email new matches right after each poll.
 
 ## Tests & linting
 

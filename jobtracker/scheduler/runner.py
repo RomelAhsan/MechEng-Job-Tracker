@@ -87,16 +87,52 @@ def build_jobs(companies: list[Company], settings: Settings) -> list[ScheduledJo
     return jobs
 
 
+def _notify_after_poll(
+    session_factory: sessionmaker[Session],
+    company_id: str,
+    result: ingest_service.CompanyRunResult | None,
+    settings: Settings,
+) -> None:
+    """Email new matches / removals / source failures for a just-polled company.
+
+    Gated behind ``settings.notify_on_poll`` (safe default OFF) and fully
+    fail-soft: a notification error never affects the poll or the scheduler.
+    The notifier itself falls back to the outbox when no SMTP creds are set.
+    """
+    if not settings.notify_on_poll or result is None:
+        return
+    nothing_changed = not (result.new or result.changed or result.removed)
+    if nothing_changed and result.status != "error":
+        return
+    try:
+        from jobtracker.services import notification_service
+
+        session = session_factory()
+        try:
+            # Dedup via NotificationLog makes re-scanning safe; run_recent reads
+            # the detection audit log + source health to find what changed.
+            notification_service.run_recent(session, settings=settings)
+            session.commit()
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001 - notifications never break the scheduler.
+        logger.exception("Post-poll notification failed for company %s", company_id)
+
+
 def poll_company(
     session_factory: sessionmaker[Session],
     company_id: str,
+    settings: Settings | None = None,
 ) -> None:
     """Run a single fail-soft ingestion pass for one company.
 
     Wrapped so that one company failing never stops the scheduler: any
     exception is logged and swallowed (``ingest_service.run`` is already
-    fail-soft per company and records failures to ``source_health``).
+    fail-soft per company and records failures to ``source_health``). When
+    ``settings.notify_on_poll`` is enabled, new matches trigger prompt emails
+    after the poll (also fail-soft).
     """
+    settings = settings or get_settings()
     started = time.monotonic()
     try:
         session = session_factory()
@@ -106,6 +142,7 @@ def poll_company(
         finally:
             session.close()
         result = summary.companies[0] if summary.companies else None
+        _notify_after_poll(session_factory, company_id, result, settings)
         duration = time.monotonic() - started
         if result is not None:
             logger.info(
@@ -163,7 +200,7 @@ def run_scheduler(settings: Settings | None = None) -> None:
 
     # Immediate first poll of all companies so the page populates promptly.
     for job in plan:
-        poll_company(session_factory, job.company_id)
+        poll_company(session_factory, job.company_id, settings)
 
     scheduler = BlockingScheduler(timezone="UTC")
     for job in plan:
@@ -171,7 +208,7 @@ def run_scheduler(settings: Settings | None = None) -> None:
             poll_company,
             trigger="interval",
             minutes=job.interval_minutes,
-            args=[session_factory, job.company_id],
+            args=[session_factory, job.company_id, settings],
             id=f"poll:{job.company_id}",
             max_instances=1,
             coalesce=True,

@@ -262,13 +262,32 @@ class SavedFilter(Base):
 
 
 class NotificationLog(Base):
-    """Notification log scaffold (Phase 5, unused in Phase 1)."""
+    """Delivery + dedup history for notifications (FEAT-005).
+
+    One row per email actually sent (or written to the outbox). The
+    ``(user_id, job_id, channel, rule)`` tuple is the dedup key: the notifier
+    never emails the same job for the same rule to the same user twice. ``rule``
+    is the SPEC notification rule that fired (e.g. ``strong_match``,
+    ``source_failure``), and for source-level notifications ``job_id`` is NULL
+    and ``company_id`` identifies the affected source. ``to_email`` records the
+    destination for history, and ``status`` is ``sent`` or ``outbox``.
+    """
 
     __tablename__ = "notification_log"
+    __table_args__ = (
+        Index("ix_notification_log_user", "user_id"),
+        Index("ix_notification_log_dedup", "user_id", "job_id", "channel", "rule"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     job_id: Mapped[str | None] = mapped_column(String, ForeignKey("jobs.job_id"), nullable=True)
+    company_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("companies.id"), nullable=True
+    )
     channel: Mapped[str | None] = mapped_column(String, nullable=True)
+    rule: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    to_email: Mapped[str | None] = mapped_column(String, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)

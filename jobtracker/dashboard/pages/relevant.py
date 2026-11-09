@@ -70,6 +70,27 @@ def render() -> None:
         )
         jobs = dashboard_service.list_relevant_jobs(session, filters, user_id=user_id)
 
+        # Stash the active page filters so the Notifications page can offer an
+        # "Email me jobs on my page" subscription built from exactly these.
+        st.session_state["relevant_filter_json"] = {
+            k: v
+            for k, v in {
+                "classifications": (
+                    classifications or list(dashboard_service.RELEVANT_CLASSIFICATIONS)
+                ),
+                "term_seasons": term_seasons or None,
+                "countries": countries or None,
+                "locations_query": locations_query or None,
+                "remote_statuses": remote_statuses or None,
+                "employment_types": employment_types or None,
+                "eligibility_statuses": eligibility_statuses or None,
+                "min_fit_score": fit_range[0] or None,
+                "max_fit_score": fit_range[1] if fit_range[1] < 100 else None,
+                "only_new": only_new or None,
+            }.items()
+            if v is not None
+        }
+
         st.write(f"**{len(jobs)}** matching postings.")
         for view in jobs:
             render_job_card(view, user_id=user_id)

@@ -43,13 +43,18 @@ def test_upgrade_head_on_fresh_db(
         assert {"note", "deadline"} <= app_cols
         profile_cols = {c["name"] for c in inspector.get_columns("user_profiles")}
         assert "notification_prefs" in profile_cols
+        # FEAT-005 notification_log dedup/history columns.
+        notif_cols = {c["name"] for c in inspector.get_columns("notification_log")}
+        assert {"rule", "company_id", "subject", "to_email"} <= notif_cols
     finally:
         engine.dispose()
 
 
-def test_head_is_phase2_revision() -> None:
+def test_head_is_notifications_revision() -> None:
+    # FEAT-005 chained 0003_notifications after 0002_phase2_accounts, so the
+    # head advances. Later features chain 0004_* after this.
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_current_head() == "0002_phase2_accounts"
+    assert script.get_current_head() == "0003_notifications"
 
 
 def test_downgrade_roundtrip(

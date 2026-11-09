@@ -11,7 +11,7 @@ ORM session directly beyond passing it in.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -294,6 +294,30 @@ def _matches(view: JobView, filters: JobFilters, *, now: datetime) -> bool:
     return True
 
 
+def matches_filters(view: JobView, filters: JobFilters, *, now: datetime | None = None) -> bool:
+    """Public, pure predicate: does ``view`` satisfy ``filters``?
+
+    This is the single source of truth for "does a job match this filter set",
+    reused by the notification service so subscription matching never diverges
+    from the dashboard's read-side filtering. ``only_saved`` is a per-user view
+    toggle applied by the listing functions, not a job-intrinsic predicate, so
+    it is intentionally ignored here.
+    """
+    return _matches(view, filters, now=now or _now())
+
+
+def filters_from_dict(data: dict | None) -> JobFilters:
+    """Build a :class:`JobFilters` from a stored subscription ``filter_json``.
+
+    Unknown keys are ignored so older/newer stored filters never crash the
+    notifier. Missing keys fall back to the dataclass defaults.
+    """
+    data = dict(data or {})
+    allowed = {f.name for f in fields(JobFilters)}
+    kwargs = {k: v for k, v in data.items() if k in allowed}
+    return JobFilters(**kwargs)
+
+
 def _rank_key(view: JobView) -> tuple[int, datetime]:
     """Sort by fit score (desc) then first-seen (desc)."""
     score = view.fit_score if view.fit_score is not None else -1
@@ -368,6 +392,48 @@ def list_jobs(
         views = [v for v in views if v.is_saved]
     views.sort(key=_rank_key, reverse=True)
     return views
+
+
+def views_for_job_ids(
+    session: Session,
+    job_ids: list[str],
+    *,
+    new_window: timedelta = DEFAULT_NEW_WINDOW,
+) -> dict[str, JobView]:
+    """Return ``{job_id: JobView}`` for the given ids (any status).
+
+    Used by the notification service to evaluate specific newly-detected /
+    changed / removed jobs against subscriptions. The ITAR hard exclusion is
+    still applied so ineligible roles are never surfaced in a notification.
+    """
+    if not job_ids:
+        return {}
+    now = _now()
+    stmt = (
+        select(Job, Company.name)
+        .join(Company, Company.id == Job.company_id)
+        .where(Job.job_id.in_(job_ids))
+        .where(
+            Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
+            | Job.eligibility_status.is_(None)
+        )
+    )
+    last_checked = {
+        company_id: checked_at
+        for company_id, checked_at in session.execute(
+            select(SourceHealth.company_id, SourceHealth.last_checked_at)
+        )
+    }
+    return {
+        job.job_id: _to_view(
+            job,
+            name,
+            now=now,
+            new_window=new_window,
+            source_last_checked_at=last_checked.get(job.company_id),
+        )
+        for job, name in session.execute(stmt)
+    }
 
 
 def list_relevant_jobs(

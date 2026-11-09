@@ -271,15 +271,58 @@ def analyze() -> None:
 
 
 @app.command("notify")
-def notify() -> None:
-    """Notifications (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def notify(
+    since_hours: float | None = typer.Option(
+        None,
+        "--since-hours",
+        help="Only consider jobs/events detected in the last N hours (default: all).",
+    ),
+) -> None:
+    """Email users about recent new/changed/removed jobs and source failures.
+
+    Evaluates each user's subscriptions and notification preferences against
+    recently detected changes and sends due emails, deduped so nothing is sent
+    twice. Safe to run with no SMTP creds: emails are written to the outbox.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from jobtracker.services import notification_service
+
+    since = None
+    if since_hours is not None:
+        since = datetime.now(UTC) - timedelta(hours=since_hours)
+
+    with _session_scope() as session:
+        result = notification_service.run_recent(session, since=since)
+    typer.echo(
+        f"Notify complete: {result.sent} sent, "
+        f"{result.skipped_duplicate} skipped (already sent)."
+    )
 
 
 @app.command("digest")
-def digest() -> None:
-    """Digest summaries (deferred to a later phase)."""
-    typer.echo(_LATER_PHASE_MSG)
+def digest(
+    since_hours: float = typer.Option(
+        24.0,
+        "--since-hours",
+        help="Summarise jobs detected in the last N hours (default: 24).",
+    ),
+) -> None:
+    """Send each subscribed user a periodic summary email of recent matches.
+
+    Safe to run with no SMTP creds: emails are written to the outbox.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from jobtracker.services import notification_service
+
+    since = datetime.now(UTC) - timedelta(hours=since_hours)
+    with _session_scope() as session:
+        result = notification_service.send_digest(session, since=since)
+    typer.echo(
+        f"Digest complete: {result.sent} sent, "
+        f"{result.skipped_duplicate} skipped (already sent)."
+    )
 
 
 if __name__ == "__main__":
