@@ -150,6 +150,30 @@ def test_workday_auth_walled_raises_not_swallowed() -> None:
 
 
 @respx.mock
+def test_workday_detail_auth_wall_surfaces() -> None:
+    """A board that lists publicly but auth-walls detail GETs is a source error.
+
+    The list POST succeeds, but the per-posting detail endpoint returns 401; we
+    must surface it (CORE RULE #1) rather than emit a posting with an empty
+    description that looks healthy.
+    """
+    respx.post(JOBS_URL).mock(
+        return_value=httpx.Response(200, json=load_fixture("workday_jobs_page1.json"))
+    )
+    respx.get(DETAIL_1).mock(return_value=httpx.Response(401, json={"error": "nope"}))
+
+    client = _client()
+    try:
+        WorkdayConnector(client).fetch(_company())
+    except httpx.HTTPError:
+        pass  # surfaced to the fail-soft ingest layer, as intended
+    else:  # pragma: no cover - a detail 401 must not silently return jobs
+        raise AssertionError("detail auth-wall must surface, not return jobs")
+    finally:
+        client.close()
+
+
+@respx.mock
 def test_workday_resolves_coordinates_from_careers_url() -> None:
     respx.post(JOBS_URL).mock(
         return_value=httpx.Response(200, json={"total": 0, "jobPostings": []})

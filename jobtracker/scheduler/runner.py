@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -109,9 +110,19 @@ def _notify_after_poll(
 
         session = session_factory()
         try:
-            # Dedup via NotificationLog makes re-scanning safe; run_recent reads
-            # the detection audit log + source health to find what changed.
-            notification_service.run_recent(session, settings=settings)
+            # Scope the scan to the just-polled company and a short time window
+            # so post-poll notification work stays proportional to this poll
+            # instead of re-scanning every company's full history on every poll.
+            # Dedup via NotificationLog still makes any overlap safe.
+            since = datetime.now(UTC) - timedelta(
+                minutes=settings.notify_poll_window_minutes
+            )
+            notification_service.run_recent(
+                session,
+                since=since,
+                company_ids=[company_id],
+                settings=settings,
+            )
             session.commit()
         finally:
             session.close()

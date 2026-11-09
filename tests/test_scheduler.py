@@ -6,8 +6,12 @@ without real APScheduler timers, threads, or network calls.
 
 from __future__ import annotations
 
+import pytest
+
 from jobtracker.db.models import Company
+from jobtracker.scheduler import runner
 from jobtracker.scheduler.runner import build_jobs, compute_interval
+from jobtracker.services import ingest_service
 from jobtracker.settings import Settings
 
 
@@ -73,3 +77,60 @@ def test_build_jobs_skips_disabled_and_inactive() -> None:
     assert [j.company_id for j in jobs] == ["a", "d"]
     by_id = {j.company_id: j.interval_minutes for j in jobs}
     assert by_id == {"a": 15, "d": 10}
+
+
+def test_notify_after_poll_is_scoped_to_company_and_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The post-poll notifier scans only the just-polled company + a window.
+
+    Guards against the O(companies x history) full-rescan: ``run_recent`` must
+    be called with ``company_ids=[the polled company]`` and a bounded ``since``
+    rather than an unscoped full-history scan.
+    """
+    calls: list[dict] = []
+
+    class _FakeNotifier:
+        def run_recent(self, session, **kwargs):  # noqa: ANN001
+            calls.append(kwargs)
+
+    fake = _FakeNotifier()
+    monkeypatch.setattr(
+        "jobtracker.services.notification_service.run_recent", fake.run_recent
+    )
+
+    settings = _settings(notify_on_poll=True, notify_poll_window_minutes=180)
+
+    class _Factory:
+        def __call__(self):
+            class _S:
+                def commit(self_inner):  # noqa: ANN001
+                    pass
+
+                def close(self_inner):  # noqa: ANN001
+                    pass
+
+            return _S()
+
+    result = ingest_service.CompanyRunResult(company_id="acme", status="ok", new=1)
+    runner._notify_after_poll(_Factory(), "acme", result, settings)
+
+    assert len(calls) == 1
+    kwargs = calls[0]
+    assert kwargs["company_ids"] == ["acme"]
+    assert kwargs["since"] is not None  # bounded look-back window, not all time
+
+
+def test_notify_after_poll_noop_when_nothing_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No change and no error -> the notifier is not invoked at all."""
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "jobtracker.services.notification_service.run_recent",
+        lambda session, **kw: calls.append(kw),
+    )
+    settings = _settings(notify_on_poll=True)
+    result = ingest_service.CompanyRunResult(company_id="acme", status="ok")
+    runner._notify_after_poll(lambda: None, "acme", result, settings)
+    assert calls == []

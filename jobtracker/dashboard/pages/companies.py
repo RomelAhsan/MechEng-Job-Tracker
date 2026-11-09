@@ -39,11 +39,13 @@ def _add_company(url: str, company_id: str, name: str, priority: str) -> str:
     )
 
 
-def _add_company_by_name(name: str, priority: str):
+def _add_company_by_name(name: str, priority: str, *, confirm: bool = False):
     from jobtracker.connectors.http import HttpClient
 
     with write_session_scope() as session, HttpClient() as http:
-        return company_service.add_from_name(session, name, http, priority=priority)
+        return company_service.add_from_name(
+            session, name, http, priority=priority, confirm=confirm
+        )
 
 
 def render() -> None:
@@ -80,8 +82,36 @@ def render() -> None:
             result = _add_company_by_name(by_name, name_priority)
         if result.resolved:
             st.success(result.message)
+        elif result.needs_verification:
+            # A board was found but its identity could not be confirmed; make
+            # the user explicitly confirm before importing a possibly-wrong org.
+            st.session_state["pending_name_verify"] = {
+                "name": by_name,
+                "priority": name_priority,
+                "url": result.candidate_url,
+                "message": result.message,
+            }
         else:
             st.warning(result.message)
+
+    pending = st.session_state.get("pending_name_verify")
+    if pending:
+        st.warning(pending["message"])
+        verify_cols = st.columns(2)
+        if verify_cols[0].button(
+            f"Yes, import {pending['url']}", key="confirm-name-add"
+        ):
+            with st.spinner("Importing confirmed board..."):
+                confirmed = _add_company_by_name(
+                    pending["name"], pending["priority"], confirm=True
+                )
+            st.session_state.pop("pending_name_verify", None)
+            if confirmed.resolved:
+                st.success(confirmed.message)
+            else:
+                st.warning(confirmed.message)
+        if verify_cols[1].button("Cancel", key="cancel-name-add"):
+            st.session_state.pop("pending_name_verify", None)
 
     with st.form("add-company"):
         st.subheader("Add a company by careers URL")

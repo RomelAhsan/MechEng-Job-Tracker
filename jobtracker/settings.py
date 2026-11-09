@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     #: When True the scheduler invokes the notifier after each poll so new jobs
     #: trigger prompt emails. Safe default OFF so plain CLI users are unchanged.
     notify_on_poll: bool = False
+    #: Look-back window (minutes) for the post-poll notifier. Scopes the scan to
+    #: just-detected changes so work stays proportional to the poll; kept wider
+    #: than the max poll interval so nothing in the last cycle is missed (dedup
+    #: via NotificationLog makes the overlap safe).
+    notify_poll_window_minutes: int = 180
 
     # AI provider (optional, Phase 3). The app is KEY-READY: with no key the AI
     # features degrade gracefully (an "add a Gemini API key" message) instead of

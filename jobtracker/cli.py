@@ -83,22 +83,32 @@ def add_company_by_name(
     name: str = typer.Argument(..., help="Company name to resolve, e.g. 'Toyota'"),
     company_id: str | None = typer.Option(None, "--id", help="Explicit company id/slug"),
     priority: str = typer.Option("medium", "--priority", help="high|medium|low"),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Import a found board even if its identity could not be confirmed.",
+    ),
 ) -> None:
     """Add a company by NAME: probe public boards and baseline-import the match.
 
     Resolves the name to a public Greenhouse/Lever/Ashby/Workable board, picks
-    the first that returns real postings, and baseline-imports it. If nothing
-    resolves it prints a helpful message (use ``add-company`` with the careers
-    URL instead).
+    the first that returns real postings whose identity matches the name, and
+    baseline-imports it. If a board is found but its identity cannot be
+    confirmed (a possible slug collision), it is NOT imported; re-run with
+    ``--confirm`` to import it anyway. If nothing resolves it prints a helpful
+    message (use ``add-company`` with the careers URL instead).
     """
     from jobtracker.connectors.http import HttpClient
     from jobtracker.services import company_service
 
     with _session_scope() as session, HttpClient() as http:
         result = company_service.add_from_name(
-            session, name, http, company_id=company_id, priority=priority
+            session, name, http, company_id=company_id, priority=priority,
+            confirm=confirm,
         )
     typer.echo(result.message)
+    if result.needs_verification:
+        typer.echo("Re-run with --confirm to import this board.")
     if not result.resolved:
         raise typer.Exit(code=1)
 

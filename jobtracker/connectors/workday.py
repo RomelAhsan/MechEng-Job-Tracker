@@ -156,7 +156,16 @@ class WorkdayConnector(Connector):
         if not external_path:
             return None
 
-        detail = self.http.get_json(f"{coords.cxs_base}{external_path}")
+        # CORE RULE #1: a board may list postings publicly but auth-wall the
+        # per-posting detail endpoint. ``get_json`` does not raise on 401/403,
+        # which would silently yield postings with empty descriptions; so we
+        # issue the GET via ``request`` and treat a detail-level 401/403 as a
+        # source failure too (surfaces to source_health, company stays a stub)
+        # rather than emitting a half-empty posting that looks healthy.
+        response = self.http.request("GET", f"{coords.cxs_base}{external_path}")
+        if response.status_code in (401, 403):
+            response.raise_for_status()
+        detail = response.json()
         info = {}
         if isinstance(detail, dict):
             maybe = detail.get("jobPostingInfo")

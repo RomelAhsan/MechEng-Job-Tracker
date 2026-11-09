@@ -331,6 +331,83 @@ def test_run_recent_reads_events(session: Session) -> None:
     assert any(m.to_email == user.email for m in sender.messages)
 
 
+def test_digest_rolls_up_into_single_email(session: Session) -> None:
+    """A user matching N jobs gets ONE digest email containing N items."""
+    user = _user(session)
+    company = _company(session)
+    jobs = [
+        _job(session, company, classification="strong_match") for _ in range(3)
+    ]
+    user_service.create_saved_filter(
+        session, user.id, "Strong", {"classifications": ["strong_match"]}, notify=True
+    )
+    sender = RecordingSender()
+
+    result = notification_service.send_digest(session, sender=sender)
+
+    # Exactly one email was sent to the user, not one per job.
+    assert result.sent == 1
+    assert len(sender.messages) == 1
+    message = sender.messages[0]
+    assert message.subject == "Your job tracker digest"
+    # All three matched jobs are summarised in that one email.
+    for job in jobs:
+        assert job.title in message.text_body
+    body = message.text_body
+    assert body.count("Mechanical Engineering Intern") == 3
+
+    # A second digest pass re-sends nothing (each job deduped per user).
+    second = notification_service.send_digest(session, sender=sender)
+    assert second.sent == 0
+    assert len(sender.messages) == 1
+
+
+def test_digest_only_sends_undelivered_jobs(session: Session) -> None:
+    """After one job is digested, a new match produces a one-item roll-up."""
+    user = _user(session)
+    company = _company(session)
+    _job(session, company, classification="strong_match")
+    user_service.create_saved_filter(
+        session, user.id, "Strong", {"classifications": ["strong_match"]}, notify=True
+    )
+    sender = RecordingSender()
+
+    first = notification_service.send_digest(session, sender=sender)
+    assert first.sent == 1
+
+    # A second, newly detected job should yield exactly one more digest email
+    # containing only the new job (the first is deduped out).
+    new_job = _job(session, company, classification="strong_match")
+    second = notification_service.send_digest(session, sender=sender)
+    assert second.sent == 1
+    assert len(sender.messages) == 2
+    assert sender.messages[1].text_body.count("Mechanical Engineering Intern") == 1
+    assert new_job.title in sender.messages[1].text_body
+
+
+def test_default_to_email_only_used_single_user(session: Session) -> None:
+    """The shared default-to address is only used in a single-user deployment."""
+    from jobtracker.settings import Settings
+
+    settings = Settings(notify_default_to_email="shared@example.com")
+
+    # Single user with no email on the row / prefs -> default is used.
+    only = User(email=None, password_hash="x", role="admin")
+    session.add(only)
+    session.flush()
+    assert (
+        notification_service._user_email(session, only, settings)
+        == "shared@example.com"
+    )
+
+    # Add a second user: the default is NO LONGER used (returns None), so one
+    # user's matches can never be misrouted to a shared inbox.
+    second = User(email=None, password_hash="x", role="user")
+    session.add(second)
+    session.flush()
+    assert notification_service._user_email(session, only, settings) is None
+
+
 def test_disabled_email_pref_suppresses(session: Session) -> None:
     user = _user(session)
     company = _company(session)

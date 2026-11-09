@@ -18,14 +18,16 @@ from jobtracker.schemas.company import CompanyConfig
 from jobtracker.services import company_service
 
 
-def _raw(source_job_id: str, title: str) -> RawJob:
+def _raw(source_job_id: str, title: str, *, company_slug: str = "toyota") -> RawJob:
+    # Postings link to the company's own careers domain, giving a board-identity
+    # signal that ties the board to the typed name.
     return RawJob(
         source_job_id=source_job_id,
         title=title,
         location="Toronto, Ontario, Canada",
         description_html=f"<p>{title} description</p>",
-        application_url=f"https://apply.example/{source_job_id}",
-        source_url=f"https://jobs.example/{source_job_id}",
+        application_url=f"https://careers.{company_slug}.com/{source_job_id}",
+        source_url=f"https://careers.{company_slug}.com/{source_job_id}",
     )
 
 
@@ -83,6 +85,84 @@ def test_add_from_name_resolves_and_baseline_imports(
     assert session.get(Company, "toyota") is not None
     assert session.query(Job).count() == 2
     assert session.query(JobEvent).count() == 0
+
+
+def test_add_from_name_unverified_board_is_not_silently_imported(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slug-colliding board whose identity can't be confirmed is NOT imported.
+
+    The typed name "Globex" hits a live Greenhouse board, but that board's
+    postings carry NO signal tying it to "Globex" (apply URLs on an unrelated
+    domain), simulating a slug collision with an unrelated org. We must NOT
+    silently baseline-import it; the caller gets ``needs_verification`` instead.
+    """
+    live_url = "https://boards.greenhouse.io/globex"
+    # Postings whose identity gives no signal tying them to "Globex".
+    raw_jobs = [
+        RawJob(
+            source_job_id="1",
+            title="Engineer",
+            application_url="https://apply.unrelatedcorp.example/1",
+            source_url="https://jobs.unrelatedcorp.example/1",
+        )
+    ]
+    connector = _ConditionalConnector(live_url, raw_jobs)
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: connector)
+
+    result = company_service.add_from_name(session, "Globex", http=object())
+
+    assert result.resolved is False
+    assert result.needs_verification is True
+    assert result.candidate_url == live_url
+    assert result.candidate_ats == "greenhouse"
+    assert "could not confirm" in result.message.lower()
+    # Nothing was imported.
+    assert session.query(Company).count() == 0
+    assert session.query(Job).count() == 0
+
+    # With explicit confirmation the same board IS imported.
+    confirmed = company_service.add_from_name(
+        session, "Globex", http=object(), confirm=True
+    )
+    session.flush()
+    assert confirmed.resolved is True
+    assert confirmed.add_result is not None
+    assert session.query(Company).count() == 1
+
+
+def test_board_identity_matches_content_signals() -> None:
+    # Board token alone is NOT a valid identity signal (it is derived from the
+    # typed slug, so it is circular): no postings -> cannot confirm.
+    assert not company_service._board_identity_matches("Toyota", "toyota", [])
+
+    # A posting URL carrying a name token (company's own careers domain) -> ok.
+    job = RawJob(
+        source_job_id="1",
+        title="Eng",
+        application_url="https://careers.stryker.com/job/1",
+        source_url="https://careers.stryker.com/job/1",
+    )
+    assert company_service._board_identity_matches("Stryker", "xyz", [job])
+
+    # Employer metadata carrying the name -> confirmed.
+    meta = RawJob(
+        source_job_id="3",
+        title="Eng",
+        application_url="https://apply.other.example/3",
+        source_url="https://apply.other.example/3",
+        extra={"companyName": "Medtronic plc"},
+    )
+    assert company_service._board_identity_matches("Medtronic", "xyz", [meta])
+
+    # Unrelated URLs and no metadata -> NOT confirmed.
+    other = RawJob(
+        source_job_id="2",
+        title="Eng",
+        application_url="https://apply.other.example/2",
+        source_url="https://apply.other.example/2",
+    )
+    assert not company_service._board_identity_matches("Globex", "unrelated", [other])
 
 
 def test_add_from_name_unresolvable_fails_gracefully(

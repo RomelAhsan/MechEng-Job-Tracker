@@ -29,7 +29,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from jobtracker.db.models import (
@@ -59,6 +59,7 @@ RULE_US_SPONSORSHIP = "us_sponsorship"
 RULE_SUBSCRIPTION = "subscription"
 RULE_SOURCE_FAILURE = "source_failure"
 RULE_REMOVED_AFTER_SAVED = "removed_after_saved"
+RULE_DIGEST = "digest"
 
 #: Sponsorship values that count as "explicitly provided".
 _SPONSORSHIP_PROVIDED = {"available", "provided", "yes", "sponsored"}
@@ -82,6 +83,11 @@ class PendingNotification:
     #: ``job_id`` for job-level rules; ``company_id`` for source-level rules.
     job_id: str | None = None
     company_id: str | None = None
+    #: For a multi-job digest roll-up: every job id summarised in this one
+    #: email. Each is logged separately so the same job is never re-digested,
+    #: while the user still receives a single email. Empty for single-job
+    #: pendings (dedup/record then use ``job_id``).
+    digest_job_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -97,13 +103,28 @@ class NotifyResult:
 
 
 def _user_email(session: Session, user: User, settings: Settings) -> str | None:
-    """Resolve the destination email for a user (prefs > user row > default)."""
+    """Resolve the destination email for a user (prefs > user row > default).
+
+    The ``notify_default_to_email`` fallback is ONLY used in a single-user
+    deployment. In a genuine multi-user setup falling back to a shared default
+    address could misroute one user's matches to another inbox, so when more
+    than one user exists we return ``None`` (no address) rather than the shared
+    default and that user simply gets no mail until they set their own address.
+    """
     prefs = user_service.get_notification_prefs(session, user.id)
     if prefs.get("email"):
         return str(prefs["email"])
     if user.email:
         return user.email
-    return settings.notify_default_to_email
+    if _is_single_user(session):
+        return settings.notify_default_to_email
+    return None
+
+
+def _is_single_user(session: Session) -> bool:
+    """True when the deployment has at most one user account."""
+    count = session.scalar(select(func.count()).select_from(User)) or 0
+    return count <= 1
 
 
 def _email_enabled(session: Session, user_id: int) -> bool:
@@ -238,19 +259,26 @@ def _record(
     pending: PendingNotification,
     status: str,
 ) -> None:
-    session.add(
-        NotificationLog(
-            user_id=pending.user_id,
-            job_id=pending.job_id,
-            company_id=pending.company_id,
-            channel=pending.channel,
-            rule=pending.rule,
-            subject=pending.subject,
-            to_email=pending.to_email,
-            sent_at=_now(),
-            status=status,
-        )
+    # A digest rolls up many jobs into one email; log each summarised job so
+    # the same job is never re-digested to this user (dedup key is per job).
+    job_ids: list[str | None] = (
+        list(pending.digest_job_ids) if pending.digest_job_ids else [pending.job_id]
     )
+    now = _now()
+    for job_id in job_ids:
+        session.add(
+            NotificationLog(
+                user_id=pending.user_id,
+                job_id=job_id,
+                company_id=pending.company_id,
+                channel=pending.channel,
+                rule=pending.rule,
+                subject=pending.subject,
+                to_email=pending.to_email,
+                sent_at=now,
+                status=status,
+            )
+        )
 
 
 # --- Pending builders ------------------------------------------------------
@@ -432,7 +460,11 @@ def _deliver(
 ) -> NotifyResult:
     result = NotifyResult()
     for pending in pendings:
-        if _already_sent(
+        # Digests dedup per summarised job in ``send_digest`` before building
+        # the single roll-up pending, so the pending-level check (which is
+        # job-level) is skipped for them; every other pending is job/company-
+        # scoped and deduped here.
+        if not pending.digest_job_ids and _already_sent(
             session,
             pending.user_id,
             pending.job_id,
@@ -500,13 +532,19 @@ def run(
 
 
 def _recent_event_job_ids(
-    session: Session, event_types: tuple[str, ...], *, since: datetime | None
+    session: Session,
+    event_types: tuple[str, ...],
+    *,
+    since: datetime | None,
+    company_ids: list[str] | None = None,
 ) -> list[str]:
     from jobtracker.db.models import JobEvent
 
     stmt = select(JobEvent.job_id).where(JobEvent.event_type.in_(event_types))
     if since is not None:
         stmt = stmt.where(JobEvent.created_at >= since)
+    if company_ids is not None:
+        stmt = stmt.where(JobEvent.company_id.in_(company_ids))
     seen: list[str] = []
     for (job_id,) in session.execute(stmt):
         if job_id is not None and job_id not in seen:
@@ -514,12 +552,15 @@ def _recent_event_job_ids(
     return seen
 
 
-def _failed_company_ids(session: Session) -> list[str]:
+def _failed_company_ids(
+    session: Session, *, company_ids: list[str] | None = None
+) -> list[str]:
+    stmt = select(SourceHealth.company_id).where(SourceHealth.last_status == "error")
+    if company_ids is not None:
+        stmt = stmt.where(SourceHealth.company_id.in_(company_ids))
     return [
         company_id
-        for (company_id,) in session.execute(
-            select(SourceHealth.company_id).where(SourceHealth.last_status == "error")
-        )
+        for (company_id,) in session.execute(stmt)
         if company_id is not None
     ]
 
@@ -528,6 +569,7 @@ def run_recent(
     session: Session,
     *,
     since: datetime | None = None,
+    company_ids: list[str] | None = None,
     settings: Settings | None = None,
     sender: EmailSender | None = None,
 ) -> NotifyResult:
@@ -535,15 +577,19 @@ def run_recent(
 
     Reads the detection audit log (:class:`JobEvent`) and source health to find
     what changed since ``since`` (or across all history when ``None``), then
-    delegates to :func:`run`. Dedup via NotificationLog guarantees nothing is
-    re-sent even when the window overlaps previous runs. Backs
-    ``python -m jobtracker notify``.
+    delegates to :func:`run`. When ``company_ids`` is given the scan is scoped
+    to those companies so post-poll notifications stay proportional to the
+    just-polled source (O(window) rather than O(all history)); dedup via
+    NotificationLog still guarantees nothing is re-sent even when a window
+    overlaps previous runs. Backs ``python -m jobtracker notify``.
     """
     new_or_changed = _recent_event_job_ids(
-        session, ("new", "changed", "reactivated"), since=since
+        session, ("new", "changed", "reactivated"), since=since, company_ids=company_ids
     )
-    removed = _recent_event_job_ids(session, ("removed",), since=since)
-    failed = _failed_company_ids(session)
+    removed = _recent_event_job_ids(
+        session, ("removed",), since=since, company_ids=company_ids
+    )
+    failed = _failed_company_ids(session, company_ids=company_ids)
     return run(
         session,
         new_job_ids=new_or_changed,
@@ -599,19 +645,31 @@ def send_digest(
                     matched[view.job_id] = _item(
                         view, f"Matches your subscription '{sub.name}'"
                     )
-        for job_id, item in matched.items():
-            pendings.append(
-                PendingNotification(
-                    user_id=user.id,
-                    to_email=to_email,
-                    rule="digest",
-                    channel=DEFAULT_CHANNEL,
-                    subject="Your job tracker digest",
-                    intro="Here are recent jobs matching your subscriptions:",
-                    items=[item],
-                    job_id=job_id,
-                )
+
+        # Dedup per (user, job) so a job is summarised to a user at most once,
+        # but roll the still-undelivered matches into a SINGLE digest email
+        # (one pending with items=[...]) rather than one email per job.
+        fresh = {
+            job_id: item
+            for job_id, item in matched.items()
+            if not _already_sent(
+                session, user.id, job_id, DEFAULT_CHANNEL, RULE_DIGEST
             )
+        }
+        if not fresh:
+            continue
+        pendings.append(
+            PendingNotification(
+                user_id=user.id,
+                to_email=to_email,
+                rule=RULE_DIGEST,
+                channel=DEFAULT_CHANNEL,
+                subject="Your job tracker digest",
+                intro="Here are recent jobs matching your subscriptions:",
+                items=list(fresh.values()),
+                digest_job_ids=list(fresh.keys()),
+            )
+        )
     return _deliver(session, pendings, sender)
 
 
