@@ -467,6 +467,12 @@ def screen_ai(
         f"analyzed={summary.analyzed}, cached_skipped={summary.cached_skipped}, "
         f"errors={summary.errors}."
     )
+    if summary.quota_exhausted:
+        typer.echo(
+            "Stopped early: the Gemini daily quota is used up. Jobs not analyzed "
+            "yet stay on your page (Stage-1 result) and will be analyzed "
+            "automatically on the next run."
+        )
 
 
 @app.command("notify")

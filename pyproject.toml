@@ -29,6 +29,7 @@ dependencies = [
     "python-docx",
     "reportlab",
     "markdown",
+    "google-genai>=1.0",
 ]
 
 [project.optional-dependencies]

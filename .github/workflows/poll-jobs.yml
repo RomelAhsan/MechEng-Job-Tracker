@@ -14,7 +14,7 @@
 #   SMTP_PASSWORD    a Gmail App Password (NOT your Google password)
 #   USER_PASSWORD    any password you pick for the tracker's own account
 # Optional:
-#   AI_API_KEY       a Google AI Studio key (starts with AIza) to enable AI
+#   GEMINI_API_KEY   your Google AI Studio key (starts with AQ.) to enable AI
 #
 # With no secrets set the run still succeeds: emails are written to an
 # "outbox" artifact instead of being sent, so nothing breaks.
@@ -54,9 +54,9 @@ jobs:
       NOTIFY_FROM_EMAIL: ${{ secrets.SMTP_USERNAME }}
       NOTIFY_DEFAULT_TO_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
       NOTIFY_OUTBOX_DIR: output/outbox
-      # AI is optional; a blank provider keeps the key-ready fallback.
-      AI_PROVIDER: ${{ secrets.AI_API_KEY && 'gemini' || '' }}
-      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      # AI is optional. Any non-empty GEMINI_API_KEY turns it on (AI Studio
+      # issues "AQ."-prefixed keys; the format is not checked). Blank = off.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Consumed by the `create-user` bootstrap step.
       JOBTRACKER_USER_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
       JOBTRACKER_USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
@@ -101,7 +101,7 @@ jobs:
         run: python -m jobtracker screen
 
       # Stage-2 AI judgment over the Stage-1 survivors, throttled for the
-      # Gemini free tier. Only effective when AI_API_KEY is set; with no key it
+      # Gemini free tier. Only effective when GEMINI_API_KEY is set; with no key it
       # prints the "add a key" guidance and no-ops. Runs BEFORE notify so the
       # cached AI verdict is available when the exact-match eligible set (which
       # drives emailing) is computed.

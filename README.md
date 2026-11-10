@@ -282,7 +282,8 @@ Key settings (`jobtracker/settings.py`, all overridable via `.env` — see
 - **Email:** `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`,
   `smtp_use_tls`, `notify_from_email`, `notify_default_to_email`,
   `notify_outbox_dir`, `notify_on_poll`.
-- **AI (optional):** `ai_provider`, `ai_api_key`, `ai_model`.
+- **AI (optional):** `gemini_api_key` (env `GEMINI_API_KEY`), `gemini_model`
+  (env `GEMINI_MODEL`, default `gemini-3.5-flash-lite`).
 
 ## Accounts & personalization
 
@@ -304,15 +305,25 @@ without AI.
 
 To enable live analysis:
 
-1. Create a free API key at **Google AI Studio**
-   (<https://aistudio.google.com/app/apikey>). A valid Gemini key looks like
-   **`AIza…`** (about 39 characters).
-2. Set `AI_PROVIDER=gemini`, `AI_API_KEY=AIza…`, and optionally `AI_MODEL`
-   (default `gemini-1.5-flash`) in your `.env` (or as Fly secrets).
+1. Create a free key at **Google AI Studio** (<https://aistudio.google.com/apikey>).
+   AI Studio keys start with `AQ.`; the app accepts any non-empty key and does
+   not check its format.
+2. Set `GEMINI_API_KEY=<your key>` in your `.env` (or as a GitHub Actions / Fly
+   secret). Optionally set `GEMINI_MODEL` (default `gemini-3.5-flash-lite`).
+3. Check the key works: `python scripts/test_gemini.py` makes one call and
+   prints the reply.
 
-> A token like `AQ.Ab8RN6…` is an OAuth/other token, **not** a Gemini API key,
-> and will almost certainly fail to authenticate — use an `AIza…` key. Your key
-> is read only from the environment / gitignored `.env` and is never committed.
+Calls go through Google's official `google-genai` SDK to the native Gemini
+endpoint. The key is read only from the environment / gitignored `.env` and is
+never committed.
+
+**Free-tier limits (measured):** `gemini-2.5-flash` returns 404 for new AI
+Studio users, and the standard flash models allow only 20 requests per day.
+`gemini-3.5-flash-lite` answers in under a second and matched
+`gemini-3.5-flash`'s eligible/not-eligible verdict on every job tested, so it
+is the default. If the daily quota still runs out, the bulk pass stops cleanly
+and resumes on the next run; jobs not yet analyzed stay on your page using the
+Stage-1 result.
 
 Analyses are cached by `(job_id, description_hash, profile_version)` so repeated
 views are free; low-confidence results are surfaced on the Source Health
@@ -431,8 +442,9 @@ Unit tests perform no live network I/O; ATS responses are mocked with fixtures.
 - **`add-company-by-name` says it couldn't resolve a company** — the employer
   likely uses a Workday board (or a non-public ATS) whose URL can't be guessed;
   use `add-company` with the careers URL from the company's careers page.
-- **AI Analysis shows "add a Gemini API key"** — set `AI_PROVIDER=gemini` and a
-  real `AIza…` key in `.env`; see [AI relevance engine](#ai-relevance-engine).
+- **AI Analysis shows "add a Gemini API key"** — set `GEMINI_API_KEY` in `.env`
+  and run `python scripts/test_gemini.py`; see
+  [AI relevance engine](#ai-relevance-engine).
 - **The dashboard shows empty pages** — point `DATABASE_URL` at a database that
   has been through `init-db` + `run` + `screen`, or seed data first.
 - **`streamlit` command not found** — ensure the virtual environment is active;
