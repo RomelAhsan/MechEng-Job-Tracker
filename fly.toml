@@ -21,8 +21,9 @@ primary_region = "yyz"
   DATABASE_URL = "sqlite:////data/jobtracker.db"
   # The scheduler must be ON for the worker process to poll.
   SCHEDULER_ENABLED = "true"
-  # Email new matches right after each poll so the page reflects boards fast.
-  NOTIFY_ON_POLL = "true"
+  # Emailing is DISABLED at the user's request. The scheduler still polls and
+  # screens; it sends no email. Set this to "true" to re-enable post-poll email.
+  NOTIFY_ON_POLL = "false"
 
 # Run DB migrations before the new release is promoted.
 [deploy]
