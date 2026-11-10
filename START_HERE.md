@@ -1,11 +1,25 @@
 # Start here
 
-This page is the short version. You do **four things**, all of them in a web
+> ## 🌐 Your live site
+> **https://RomelAhsan.github.io/MechEng-Job-Tracker/**
+>
+> A fast, always-on web page listing the co-op/internship jobs you're eligible
+> for. Open it on any device — no sign-in, no installing anything, your computer
+> does not need to be on. It refreshes itself after every collection run
+> (roughly every 15 minutes).
+>
+> **One-time setup to turn it on:** go to
+> [Settings → Pages](https://github.com/RomelAhsan/MechEng-Job-Tracker/settings/pages),
+> and under **"Source"** choose **"GitHub Actions"**. That's the only switch —
+> the site builds and publishes itself from then on.
+
+This page is the short version. You do a few things, all of them in a web
 browser. No terminal, no installing anything, and your own computer does not
 need to be switched on.
 
-When you are done, GitHub polls every job board **every 2 hours** and, once you
-turn email on, emails you only the new co-ops that match **all** your criteria.
+When you are done, GitHub polls every job board **every 15 minutes**, publishes
+your eligible jobs to the live site above, and — once you turn email on — emails
+you only the new co-ops that match **all** your criteria.
 
 ---
 
@@ -13,7 +27,8 @@ turn email on, emails you only the new co-ops that match **all** your criteria.
 
 | | |
 |---|---|
-| Jobs collected automatically | Yes, every 2 hours, on GitHub's servers |
+| Live website | https://RomelAhsan.github.io/MechEng-Job-Tracker/ — always on, free |
+| Jobs collected automatically | Yes, every 15 minutes, on GitHub's servers |
 | Emails to your Gmail | Opt-in: off until you turn it on, then only your exact "Relevant For Me" matches, never the same job twice |
 | Non-co-op / disqualifying jobs | Removed entirely (full-time, advanced-degree, ITAR / US-citizen-only, wrong term) — you never see them |
 | Your computer needs to be on | No |
@@ -25,6 +40,9 @@ or senior-experience requirements, ITAR / US-citizen-only, wrong term or
 duration). Then, if an AI key is set, the AI judges what is left and hides any
 job it rules out. With **no AI key the page still works** — it simply shows the
 jobs that survived the first stage and is never empty.
+
+
+> **What the live site can and can't do.** It's a read-only view for browsing, searching, and filtering your eligible jobs and opening the Apply links — instant, no buffering. Things that need a logged-in server (saving jobs, the email opt-in toggle, running AI from a button) live in the full app (run locally with `python -m jobtracker dashboard`). Your job collection and emails run on GitHub regardless.
 
 **Email is opt-in.** Until you turn it on in the dashboard's **Notifications**
 page ("Enable email notifications" / "Email me jobs on my page"), you get no

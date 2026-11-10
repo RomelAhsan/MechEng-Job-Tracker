@@ -283,6 +283,28 @@ def export(
     typer.echo(f"Exported {fmt} to {path}.")
 
 
+@app.command("export-web")
+def export_web(
+    output: str = typer.Option(
+        "web/public/data/jobs.json",
+        "--output",
+        help="Path for the static JSON feed the React site reads.",
+    ),
+) -> None:
+    """Write the eligible 'Relevant For Me' set as a static JSON feed.
+
+    Powers the always-on GitHub Pages site. Reuses the existing eligible-set
+    query (Stage-1 hard filter INTERSECT the Stage-2 AI gate, with the no-key
+    Stage-1 fallback) so the website shows exactly the same jobs as the app.
+    Always writes a valid file, even when no jobs match.
+    """
+    from jobtracker.services import web_export_service
+
+    with _session_scope() as session:
+        path = web_export_service.export_web(session, output=output)
+    typer.echo(f"Wrote web feed to {path}.")
+
+
 @app.command("dashboard")
 def dashboard() -> None:
     """Launch the Streamlit dashboard."""
