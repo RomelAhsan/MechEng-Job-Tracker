@@ -488,9 +488,15 @@ def list_relevant_jobs(
     """
     filters = filters or JobFilters()
     if filters.classifications:
-        filters.classifications = [
+        intersection = [
             c for c in filters.classifications if c in RELEVANT_CLASSIFICATIONS
         ]
+        # A caller-supplied classification filter is INTERSECTED with the
+        # relevant set so this page can never surface a non-relevant
+        # classification. If that intersection is empty (the caller passed only
+        # non-relevant values), fall back to the full relevant set -- never to
+        # "no classification constraint", which would surface everything.
+        filters.classifications = intersection or list(RELEVANT_CLASSIFICATIONS)
     else:
         filters.classifications = list(RELEVANT_CLASSIFICATIONS)
     filters.include_removed = False

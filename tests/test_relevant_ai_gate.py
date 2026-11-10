@@ -92,6 +92,32 @@ def test_eligible_cache_keeps_survivor(session: Session) -> None:
     assert {v.job_id for v in views} == {"job-1", "job-2"}
 
 
+def test_only_non_relevant_classification_filter_falls_back(session: Session) -> None:
+    # A caller-supplied classification filter containing ONLY non-relevant
+    # values intersects to empty; the page must fall back to the relevant set,
+    # NOT to "no classification constraint" (which would surface everything).
+    _seed(session)
+    # A non-relevant job that must NEVER appear on this page.
+    session.add(
+        Job(
+            job_id="weak-job",
+            company_id="acme",
+            source_job_id="weak-job",
+            title="Mechanical Engineering Intern",
+            description="Design mechanical systems.",
+            description_hash="h-weak",
+            status="active",
+            classification="weak_match",
+            eligible=True,
+        )
+    )
+    session.flush()
+    filters = dashboard_service.JobFilters(classifications=["weak_match"])
+    views = dashboard_service.list_relevant_jobs(session, filters)
+    assert {v.job_id for v in views} == {"job-1", "job-2"}
+    assert "weak-job" not in {v.job_id for v in views}
+
+
 # --- The pure gate: provider-error / no-cache fallback ---------------------
 
 

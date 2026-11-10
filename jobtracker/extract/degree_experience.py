@@ -30,7 +30,7 @@ _ADVANCED_DEGREE_RE = re.compile(
     r"\b(?:master'?s?|m\.?s\.?(?:c\.?)?|m\.?eng\.?|"
     r"ph\.?d\.?|doctorate|doctoral|mba)\b"
     r"[^.?!\n]{0,40}?\b(?:degree\s+)?(?:required|require[sd]|"
-    r"must\s+have|preferred|or\s+equivalent|mandatory)\b"
+    r"must\s+have|or\s+equivalent|mandatory)\b"
     r"|\b(?:required|must\s+have|minimum\s+of)\b[^.?!\n]{0,40}?"
     r"\b(?:master'?s?|m\.?s\.?(?:c\.?)?|m\.?eng\.?|"
     r"ph\.?d\.?|doctorate|doctoral|mba)\b",
@@ -79,7 +79,7 @@ _ENROLLED_RE = re.compile(
 # Seniority keywords framed as a role level (guard against "lead a project" /
 # "team lead opportunities" by requiring seniority framing where practical).
 _SENIORITY_RE = re.compile(
-    r"\b(?:senior|staff|principal)\s+"
+    r"\b(?:senior|staff|principal)\s+(?:[a-z]+\s+){0,2}?"
     r"(?:engineer|developer|scientist|designer|analyst|"
     r"manager|architect|specialist|role|position|level)\b"
     r"|\b(?:senior|staff|principal|lead)[-\s]level\b"
@@ -97,6 +97,17 @@ _YEARS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A years-of-experience clause framed as merely PREFERRED / nice-to-have rather
+# than required. Mirrors the degree rule (fix: "preferred" is ambiguous, not a
+# hard exclude): such a line survives Stage 1 and is routed to the AI stage.
+# Checked only against the text immediately AFTER the matched years clause so an
+# "N years ... required" clause elsewhere still hard-fails.
+_YEARS_PREFERRED_RE = re.compile(
+    r"^[^.?!\n]{0,20}?\b(?:preferred|nice\s+to\s+have|"
+    r"a\s+plus|is\s+a\s+bonus|desirable)\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class DegreeExperienceExtraction:
@@ -110,7 +121,13 @@ class DegreeExperienceExtraction:
 
 
 def _match_years(text: str) -> tuple[int, str] | None:
-    """Return (years, evidence) from an N-years-of-experience clause."""
+    """Return (years, evidence) from a *required* N-years-of-experience clause.
+
+    A clause framed as merely preferred / nice-to-have ("2 years of experience
+    preferred") is ambiguous for a first-year and is NOT treated as a hard
+    requirement -- it survives to the AI stage, mirroring the degree rule. The
+    explicit "minimum of" / "at least" framings are always requirements.
+    """
     match = _YEARS_RE.search(text)
     if match is None:
         return None
@@ -119,6 +136,13 @@ def _match_years(text: str) -> tuple[int, str] | None:
         return None
     years = int(captured)
     if years <= 0 or years > 50:
+        return None
+    # The first alternation (group 1) is the bare "N years of experience" arm,
+    # which may be softened by a following "preferred" / "a plus". The
+    # "minimum of" / "at least" arms are inherently requirement framing.
+    if match.group(1) is not None and _YEARS_PREFERRED_RE.search(
+        text[match.end() :]
+    ):
         return None
     return years, match.group(0).strip()
 
