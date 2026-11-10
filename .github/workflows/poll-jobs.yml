@@ -1,7 +1,7 @@
-# Scheduled job poller + emailer.
+# Scheduled job poller (emailing currently DISABLED).
 #
-# Runs on GitHub's servers, so jobs keep updating and emails keep arriving with
-# nothing running on your own computer.
+# Runs on GitHub's servers, so jobs keep updating with nothing running on your
+# own computer. Email sending is turned OFF (see the notify step below).
 #
 # Cadence: every 15 minutes. The repository is PUBLIC, so GitHub Actions
 # minutes are unlimited. The concurrency guard below ensures runs never
@@ -107,12 +107,13 @@ jobs:
       - name: Screen with AI (optional, throttled)
         run: python -m jobtracker screen-ai --only-missing
 
-      # Email is OPT-IN and EXACT-MATCH only: this emails ONLY users who opted
-      # in, and ONLY about jobs in their final eligible "Relevant For Me" set
-      # (Stage-1 survivors INTERSECT the AI-eligible gate). Broad rule matches
-      # no longer trigger email. With no SMTP creds the emails go to the outbox.
-      - name: Email newly found matches
-        run: python -m jobtracker notify --since-hours 6
+      # EMAILING IS DISABLED (turned off at the user's request). The collector
+      # still polls, screens, and publishes the site every run -- it just does
+      # not send any email. To re-enable, uncomment the step below; it only
+      # emails users who opted in, and only about jobs in their final eligible
+      # "Relevant For Me" set (Stage-1 survivors INTERSECT the AI-eligible gate).
+      # - name: Email newly found matches
+      #   run: python -m jobtracker notify --since-hours 6
 
       - name: Build a browsable job list
         run: |
