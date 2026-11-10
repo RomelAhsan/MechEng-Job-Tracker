@@ -161,10 +161,18 @@ one source failing never aborts a run; failures and health are recorded in
 (see [Accounts & personalization](#accounts--personalization)); every page is a
 thin view over the service layer:
 
-1. **Relevant For Me** (default) — strong + possible matches with new-job
-   badges, fit score, concerns, apply + source links, freshness timestamps, and
-   filters (term, duration, location, country, remote, employment type,
-   sponsorship eligibility, freshness window, fit-score range, classification).
+1. **Relevant For Me** (default) — your **two-stage eligible set**: a
+   deterministic Stage-1 hard filter removes jobs you cannot take (full-time /
+   new-grad, advanced-degree or senior-experience requirements, ITAR /
+   US-citizen-only barriers, incompatible stated term/duration, removed
+   postings), THEN the Stage-2 AI judgment runs over the survivors and hides
+   any the model explicitly rules out. What remains is strong + possible
+   matches with new-job badges, fit score, concerns, apply + source links,
+   freshness timestamps, and filters (term, duration, location, country,
+   remote, employment type, sponsorship eligibility, freshness window,
+   fit-score range, classification). **With no valid Gemini key the Stage-2
+   gate is a no-op**, so the page falls back to exactly the Stage-1 survivors
+   and is never empty.
 2. **All Internships** — the full active database with advanced filters, a
    "Show removed (archive)" toggle, source info, and direct links.
 3. **Companies** — a table with source-health summary, an **add-company-by-name**
@@ -198,6 +206,29 @@ defeated by the eligibility-status filter widget (`ineligible_itar` is never a
 selectable option). Genuinely ambiguous roles (missing or unclear work-auth
 information) remain visible as `possibly_eligible_unknown`; only explicit
 ITAR / US-citizen-only barriers are excluded.
+
+### Two-stage eligibility
+
+ITAR filtering is one rule inside a broader **two-stage eligibility** model:
+
+- **Stage 1 — deterministic hard filter.** During screening each job gets a
+  persisted verdict (`Job.eligible`). A job that is clearly not a co-op you
+  could take — full-time / new-grad, requires an advanced degree or senior
+  years of experience, ITAR / US-citizen-only, or states an incompatible
+  term/duration — is marked `eligible=False` and **removed from every browsing
+  view everywhere** (Relevant For Me, All Internships, the archive, and the
+  filter-option lists), exactly like the ITAR exclusion above. Un-screened
+  (`NULL`) and surviving (`True`) jobs stay visible.
+- **Stage 2 — AI judgment on the survivors.** *Relevant For Me* then intersects
+  the Stage-1 survivors with the cached AI verdict: a survivor the model
+  explicitly rules out (a `skip` recommendation or a plainly-negative
+  work-authorization / duration / term assessment) is hidden; everything else
+  is kept.
+
+The Stage-2 gate reads **only the cached AI analysis** (no network at page
+load) and is **non-blocking on uncertainty**: a survivor with no cached verdict
+is kept. So with no valid Gemini key — or before the bulk AI pass has run —
+*Relevant For Me* is exactly the Stage-1 survivors and is **never empty**.
 
 ## Configuration
 
@@ -353,11 +384,21 @@ On Fly.io you can also use volume snapshots; see [DEPLOY.md](DEPLOY.md).
 
 ### Email notifications
 
-`notify` and `digest` evaluate each user's saved-filter subscriptions and
-notification preferences and email new matching jobs. Every email lists the
-direct application URL plus company, title, location, term, duration, fit
-score, and reason, and no job is ever emailed twice for the same rule (dedup
-via `notification_log`).
+Email is **OPT-IN and EXACT-MATCH only**. By default **no account receives any
+email**. You opt in on the **Notifications** page by ticking **"Enable email
+notifications"** (and optionally **"Email me jobs on my page"** to subscribe to
+your current Relevant-For-Me filters). Once opted in, `notify` and `digest`
+email you **only about jobs in your exact-match "Relevant For Me" set** — the
+same final eligible set (Stage-1 survivors INTERSECT the AI-eligible gate). The
+old broad rules (strong-match, high-priority possible, spring four-month,
+preferred-location, US-sponsorship) **no longer trigger emails on their own**: a
+job is emailed only if it is in that eligible set, and even saved-filter
+subscriptions are intersected with it so a non-eligible / non-co-op job can
+never be emailed. Every email lists the direct application URL plus company,
+title, location, term, duration, fit score, and reason, and no job is ever
+emailed twice for the same rule (dedup via `notification_log`).
+`removed_after_saved` and `source_failure` alerts are preserved (still gated by
+the opt-in).
 
 Delivery is provider-agnostic SMTP. **With no SMTP credentials configured the
 notifier runs in a safe "outbox" mode**: rendered emails are written to

@@ -17,7 +17,10 @@ def render() -> None:
     user_id = require_login()
     st.title("Notifications")
     st.caption(
-        "Choose how you want to be notified about new matching jobs. When no "
+        "Email is OPT-IN. Until you turn it on below you receive no emails. "
+        "Once enabled, you are emailed ONLY about jobs in your exact-match "
+        "'Relevant For Me' set (jobs that pass the deterministic hard filter "
+        "AND the AI judgment) — never broad or loosely-matching jobs. When no "
         "SMTP credentials are configured, emails are written to the outbox so "
         "nothing ever breaks."
     )
@@ -29,7 +32,12 @@ def render() -> None:
         with st.form("notif-prefs"):
             email_enabled = st.checkbox(
                 "Enable email notifications",
-                value=bool(prefs.get("email_enabled", True)),
+                value=bool(prefs.get("email_enabled", False)),
+                help=(
+                    "Opt in to email. When on, you only get emails for jobs on "
+                    "your exact-match 'Relevant For Me' page — the same final "
+                    "eligible set (hard filter + AI). Off by default."
+                ),
             )
             email = st.text_input(
                 "Notification email", value=prefs.get("email", "")
@@ -58,9 +66,12 @@ def render() -> None:
         st.divider()
         st.subheader("Subscribe to these results / Email me new matches")
         st.caption(
-            "Save a named filter to subscribe to its matching jobs. When notify "
-            "is on, you get an email whenever a new posting matches. Use 'Email "
-            "me jobs on my page' to subscribe to your Relevant-For-Me results."
+            "Save a named filter to subscribe to its matching jobs. Emails only "
+            "ever fire on your exact-match 'Relevant For Me' set, so a "
+            "subscription is intersected with that eligible set and never "
+            "surfaces a non-eligible job. Use 'Email me jobs on my page' as the "
+            "simplest way to opt in to emails for your Relevant-For-Me results "
+            "(remember to enable email notifications above)."
         )
 
         # Subscribe from the user's current "Relevant For Me" page filters, if

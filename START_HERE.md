@@ -4,8 +4,8 @@ This page is the short version. You do **four things**, all of them in a web
 browser. No terminal, no installing anything, and your own computer does not
 need to be switched on.
 
-When you are done, GitHub polls every job board **every 2 hours** and emails you
-the new mechanical-engineering matches.
+When you are done, GitHub polls every job board **every 2 hours** and, once you
+turn email on, emails you only the new co-ops that match **all** your criteria.
 
 ---
 
@@ -14,10 +14,22 @@ the new mechanical-engineering matches.
 | | |
 |---|---|
 | Jobs collected automatically | Yes, every 2 hours, on GitHub's servers |
-| Emails to your Gmail | Yes, only for new matches, never the same job twice |
-| ITAR / US-citizen-only jobs | Removed entirely, you never see them |
+| Emails to your Gmail | Opt-in: off until you turn it on, then only your exact "Relevant For Me" matches, never the same job twice |
+| Non-co-op / disqualifying jobs | Removed entirely (full-time, advanced-degree, ITAR / US-citizen-only, wrong term) — you never see them |
 | Your computer needs to be on | No |
 | Cost | Free |
+
+**How "Relevant For Me" is decided (two stages).** First a deterministic hard
+filter removes every job you cannot take (full-time / new-grad, advanced-degree
+or senior-experience requirements, ITAR / US-citizen-only, wrong term or
+duration). Then, if an AI key is set, the AI judges what is left and hides any
+job it rules out. With **no AI key the page still works** — it simply shows the
+jobs that survived the first stage and is never empty.
+
+**Email is opt-in.** Until you turn it on in the dashboard's **Notifications**
+page ("Enable email notifications" / "Email me jobs on my page"), you get no
+email. Once on, you are emailed **only** about jobs on your exact-match
+"Relevant For Me" list — never broad or loosely-matching postings.
 
 A clickable dashboard with filters is a separate, optional step (see
 [the dashboard](#optional-the-clickable-dashboard) at the bottom) because it
@@ -81,11 +93,14 @@ own every 2 hours, and you never touch it again.
 Still on the **Actions** page, click the run that is going (or has a green
 tick next to it).
 
-- A **green tick** means it worked. New matching jobs were emailed to you.
-  The first run usually sends no email, because on the very first pass every
-  job is "already there" rather than new, which is exactly what stops you being
-  spammed with thousands of old postings. From the second run onwards you get
-  genuinely new jobs only.
+- A **green tick** means it worked. If you have turned email on (it is **off by
+  default** — see the Notifications page), new jobs matching your exact
+  "Relevant For Me" set were emailed to you. The first run usually sends no
+  email, because on the very first pass every job is "already there" rather than
+  new, which is exactly what stops you being spammed with thousands of old
+  postings. From the second run onwards you get genuinely new, matching jobs
+  only. If you have not opted in yet, no email is sent and the jobs still appear
+  in the downloadable list below.
 - Scroll to the bottom of that page to **Artifacts** and download **jobs**.
   Inside are `jobs.md` and `jobs.csv`: the full current list of jobs, which you
   can open in any text editor or Excel. This is the quickest way to see
