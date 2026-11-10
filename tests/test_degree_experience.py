@@ -203,3 +203,60 @@ def test_lead_a_project_not_flagged_as_senior() -> None:
         "You will help lead a project and present results to the team.",
     )
     assert result.requires_senior_experience is False
+
+
+def test_intern_reporting_to_senior_colleague_not_flagged() -> None:
+    # A senior COLLEAGUE mentioned in the description (whom the intern reports
+    # to) is boilerplate, NOT a seniority prerequisite on the candidate. The
+    # role being hired is an intern, so this must survive Stage 1.
+    result = extract_degree_experience(
+        "Design Intern", "Report to a senior design manager."
+    )
+    assert result.requires_senior_experience is False
+    assert result.evidence == []
+
+
+def test_coop_reporting_to_senior_engineer_not_flagged() -> None:
+    result = extract_degree_experience(
+        "Mechanical Engineering Co-op", "You will report to a senior design engineer."
+    )
+    assert result.requires_senior_experience is False
+    assert result.evidence == []
+
+
+def test_intern_mentored_by_principal_engineer_not_flagged() -> None:
+    result = extract_degree_experience(
+        "Summer Intern",
+        "Supported by a principal systems engineer who mentors all co-ops.",
+    )
+    assert result.requires_senior_experience is False
+    assert result.evidence == []
+
+
+def test_coop_shadowing_staff_engineer_not_flagged() -> None:
+    result = extract_degree_experience(
+        "Co-op Student",
+        "Shadow a staff manufacturing engineer during your term.",
+    )
+    assert result.requires_senior_experience is False
+    assert result.evidence == []
+
+
+def test_senior_level_candidate_in_description_still_flagged() -> None:
+    # Requirement framing on the CANDIDATE ("senior-level") is a genuine
+    # prerequisite and still hard-fails even from the description.
+    result = extract_degree_experience(
+        "Mechanical Engineer",
+        "We are seeking a senior-level candidate for this position.",
+    )
+    assert result.requires_senior_experience is True
+    assert result.evidence
+
+
+def test_experienced_professional_in_description_still_flagged() -> None:
+    result = extract_degree_experience(
+        "Mechanical Engineer",
+        "This role is for an experienced professional with a strong portfolio.",
+    )
+    assert result.requires_senior_experience is True
+    assert result.evidence

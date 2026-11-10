@@ -76,15 +76,31 @@ _ENROLLED_RE = re.compile(
 )
 
 # --- Senior-experience prerequisites ---------------------------------------
-# Seniority keywords framed as a role level (guard against "lead a project" /
-# "team lead opportunities" by requiring seniority framing where practical).
-_SENIORITY_RE = re.compile(
+# A seniority TITLE ("Senior Mechanical Engineer", "Principal Software
+# Engineer", "Staff Research Scientist"). The seniority prerequisite is a
+# property of the ROLE BEING HIRED, which lives in the TITLE -- so this pattern
+# is matched against the title ONLY. Allowing 0-2 qualifier tokens between the
+# seniority word and the role noun catches the common MechE title shape, but if
+# it were run over the description it would also match prose about senior
+# COLLEAGUES an intern reports to ("report to a senior design engineer"), which
+# is boilerplate, not a prerequisite on the candidate. (Guards against "lead a
+# project" / "team lead opportunities" by requiring the role-noun shape.)
+_SENIORITY_TITLE_RE = re.compile(
     r"\b(?:senior|staff|principal)\s+(?:[a-z]+\s+){0,2}?"
     r"(?:engineer|developer|scientist|designer|analyst|"
     r"manager|architect|specialist|role|position|level)\b"
     r"|\b(?:senior|staff|principal|lead)[-\s]level\b"
-    r"|\bexperienced\s+professional\b"
     r"|\blead\s+engineer\b",
+    re.IGNORECASE,
+)
+
+# Seniority prerequisites genuinely framed as a requirement on the CANDIDATE,
+# which may appear anywhere in the title OR description. "Senior-level
+# candidate" / "experienced professional" describe who the posting wants, not a
+# coworker, so they are safe to search over the combined blob.
+_SENIORITY_DESC_RE = re.compile(
+    r"\b(?:senior|staff|principal|lead)[-\s]level\b"
+    r"|\bexperienced\s+professional\b",
     re.IGNORECASE,
 )
 
@@ -189,7 +205,12 @@ def extract_degree_experience(
         result.reasons.append(f"Requires {years}+ years of experience: {quote}")
         result.evidence.append(quote)
 
-    seniority = _SENIORITY_RE.search(text)
+    # Seniority as a property of the role being hired lives in the TITLE; a
+    # senior COLLEAGUE mentioned in the description (common intern boilerplate)
+    # must NOT hard-exclude. Requirement-framed seniority on the candidate
+    # ("senior-level candidate", "experienced professional") is safe to detect
+    # anywhere in the combined text.
+    seniority = _SENIORITY_TITLE_RE.search(title) or _SENIORITY_DESC_RE.search(text)
     if seniority is not None:
         quote = seniority.group(0).strip()
         result.reasons.append(f"Senior-level role: {quote}")
