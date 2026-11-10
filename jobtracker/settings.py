@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     #: Gemini model used for analysis when a key is configured.
     ai_model: str = "gemini-1.5-flash"
+    #: Seconds to sleep BETWEEN provider calls in the bulk AI pass. The Gemini
+    #: 1.5 flash free tier allows ~15 requests/minute, so the 4.0s default keeps
+    #: a bulk run comfortably under that ceiling. Tests pass delay_seconds=0.
+    ai_request_delay_seconds: float = 4.0
+    #: Cap on the number of NEW analyses performed per bulk run (None =
+    #: unlimited). With a cap, a first full backfill of the Stage-1 survivor set
+    #: spreads across multiple runs so each run stays within the rate limit.
+    ai_bulk_max_per_run: int | None = None
+    #: When True the scheduler runs the bulk AI pass over each company's NEW
+    #: Stage-1 survivors after polling + screening. Safe default OFF so plain
+    #: CLI users (and no-key deployments) see no behaviour change.
+    ai_analyze_on_poll: bool = False
 
     # HTTP / connectors
     http_timeout: float = 30.0

@@ -471,10 +471,20 @@ def list_relevant_jobs(
 ) -> list[JobView]:
     """Active strong + possible matches for the 'Relevant For Me' page.
 
-    Delegates to :func:`list_jobs`, which now also enforces the persisted
-    Stage-1 ``eligible`` verdict (jobs with ``eligible IS False`` are dropped
-    at SQL level). FEAT-003 layers the AI relevance stage on top of these
-    Stage-1 survivors; for now the page relies on the persisted verdict.
+    Delegates to :func:`list_jobs`, which enforces the persisted Stage-1
+    ``eligible`` verdict (jobs with ``eligible IS False`` are dropped at SQL
+    level). FEAT-003 then layers the Stage-2 AI gate on top of these Stage-1
+    survivors: ``relevant`` = Stage-1 survivors INTERSECT AI-eligible.
+
+    The gate reads ONLY the CACHED AI analysis (via
+    :func:`ai_service.get_cached` -- no network, no new analysis at read time):
+
+    * a survivor with a cached verdict that is AI-not-eligible is hidden
+      entirely (user choice i);
+    * a survivor with a cached AI-eligible verdict is kept;
+    * a survivor with NO cached analysis (AI not yet run, no key, or a prior
+      provider error) is KEPT, so a no-key deployment yields exactly the
+      Stage-1 survivors and the page is NEVER empty.
     """
     filters = filters or JobFilters()
     if filters.classifications:
@@ -484,7 +494,24 @@ def list_relevant_jobs(
     else:
         filters.classifications = list(RELEVANT_CLASSIFICATIONS)
     filters.include_removed = False
-    return list_jobs(session, filters, new_window=new_window, user_id=user_id)
+    survivors = list_jobs(session, filters, new_window=new_window, user_id=user_id)
+
+    # Imported lazily to avoid a service import cycle at module load.
+    from jobtracker.screen.ai_verdict import ai_eligibility
+    from jobtracker.services import ai_service
+
+    def verdict_lookup(job_id: str) -> bool | None:
+        cached = ai_service.get_cached(
+            session, job_id, user_id=user_id
+        )
+        if cached is None or not cached.available or not cached.result:
+            return None
+        return ai_eligibility(cached.result)
+
+    kept_ids = set(
+        apply_ai_eligibility_gate([v.job_id for v in survivors], verdict_lookup)
+    )
+    return [v for v in survivors if v.job_id in kept_ids]
 
 
 def list_saved_job_views(
@@ -540,6 +567,67 @@ def filter_options(session: Session) -> FilterOptions:
     options.eligibility_statuses = sorted(seen["eligibility_statuses"])
     options.sponsorship_statuses = sorted(seen["sponsorship_statuses"])
     return options
+
+
+def stage1_survivor_ids(
+    session: Session,
+    *,
+    company_id: str | None = None,
+    job_ids: list[str] | None = None,
+) -> list[str]:
+    """Return the job ids of active Stage-1 survivors (shared with Stage 2).
+
+    A Stage-1 survivor is an ACTIVE job that was NOT hard-dropped by the
+    deterministic filter: ``eligible IS True`` or ``eligible IS NULL`` (un-screened),
+    and whose eligibility status is not the ITAR / US-citizen-only hard
+    exclusion. This is the SAME survivor definition the dashboard enforces at
+    SQL level in :func:`list_jobs`, exposed here so the AI stage (Stage 2) only
+    ever runs on the few hundred survivors -- never the full job corpus.
+
+    Optionally scope to a single ``company_id`` (used by the scheduler to AI
+    analyze only the just-polled company) and/or an explicit ``job_ids`` subset.
+    """
+    stmt = (
+        select(Job.job_id)
+        .where(Job.status == "active")
+        .where(Job.eligible.isnot(False))
+        .where(
+            Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
+            | Job.eligibility_status.is_(None)
+        )
+    )
+    if company_id is not None:
+        stmt = stmt.where(Job.company_id == company_id)
+    if job_ids is not None:
+        stmt = stmt.where(Job.job_id.in_(job_ids))
+    return list(session.scalars(stmt))
+
+
+def apply_ai_eligibility_gate(
+    job_ids: list[str],
+    verdict_lookup,
+) -> list[str]:
+    """Pure Stage-2 post-filter over Stage-1 survivor ids with a never-empty fallback.
+
+    ``verdict_lookup(job_id)`` must return ``True`` / ``False`` for a cached AI
+    verdict, or ``None`` when there is NO cached analysis for that job. The
+    behaviour (user choice i):
+
+    * no cached analysis (``None``) -> KEEP the job (Stage-1 inclusion fallback,
+      covers the no-key deployment and any prior provider error);
+    * cached verdict True (AI-eligible) -> KEEP;
+    * cached verdict False (AI not-eligible) -> DROP entirely (hidden, not
+      labeled).
+
+    Taking an injected lookup keeps this unit-testable without a real provider.
+    """
+    kept: list[str] = []
+    for job_id in job_ids:
+        verdict = verdict_lookup(job_id)
+        if verdict is False:
+            continue
+        kept.append(job_id)
+    return kept
 
 
 def list_company_views(session: Session) -> list[CompanyView]:

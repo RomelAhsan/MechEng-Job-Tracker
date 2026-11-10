@@ -130,6 +130,53 @@ def _notify_after_poll(
         logger.exception("Post-poll notification failed for company %s", company_id)
 
 
+def _ai_analyze_after_poll(
+    session_factory: sessionmaker[Session],
+    company_id: str,
+    result: ingest_service.CompanyRunResult | None,
+    settings: Settings,
+) -> None:
+    """Run the throttled bulk AI pass over the just-polled company's survivors.
+
+    Gated behind ``settings.ai_analyze_on_poll`` (safe default OFF) and fully
+    fail-soft: an AI error never affects the poll or the scheduler. Screening is
+    run FIRST so ``eligible`` / ``eligibility_status`` are populated before the
+    survivor set is resolved, then the AI pass is scoped to this company's
+    Stage-1 survivors with ``only_missing=True`` and the configured throttle /
+    cap, so each poll only AI-analyzes the new survivors.
+    """
+    if not settings.ai_analyze_on_poll or result is None:
+        return
+    try:
+        from jobtracker.services import ai_service, dashboard_service, screening_service
+
+        session = session_factory()
+        try:
+            # Screen this company's jobs first so Stage-1 verdicts exist before
+            # the AI pass resolves the survivor set. Fail-soft via the outer try.
+            screening_service.screen_jobs(session)
+            session.flush()
+            survivor_ids = dashboard_service.stage1_survivor_ids(
+                session, company_id=company_id
+            )
+            ai_service.analyze_jobs_bulk(
+                session,
+                job_ids=survivor_ids,
+                only_missing=True,
+                settings=settings,
+            )
+            session.commit()
+            logger.info(
+                "Post-poll AI pass for company %s over %d survivors.",
+                company_id,
+                len(survivor_ids),
+            )
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001 - AI pass never breaks the scheduler.
+        logger.exception("Post-poll AI analysis failed for company %s", company_id)
+
+
 def poll_company(
     session_factory: sessionmaker[Session],
     company_id: str,
@@ -154,6 +201,7 @@ def poll_company(
             session.close()
         result = summary.companies[0] if summary.companies else None
         _notify_after_poll(session_factory, company_id, result, settings)
+        _ai_analyze_after_poll(session_factory, company_id, result, settings)
         duration = time.monotonic() - started
         if result is not None:
             logger.info(

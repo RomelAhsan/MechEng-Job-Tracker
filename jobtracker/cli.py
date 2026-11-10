@@ -421,6 +421,54 @@ def analyze(
         typer.echo(f"  {data['explanation']}")
 
 
+@app.command("screen-ai")
+def screen_ai(
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Cap on NEW analyses this run (per-run; overrides AI_BULK_MAX_PER_RUN).",
+    ),
+    delay: float | None = typer.Option(
+        None,
+        "--delay",
+        help="Seconds to wait between provider calls (overrides AI_REQUEST_DELAY_SECONDS).",
+    ),
+    only_missing: bool = typer.Option(
+        True,
+        "--only-missing/--all",
+        help="Only analyze survivors without a valid cache entry (default), or re-run all.",
+    ),
+) -> None:
+    """Run the AI relevance engine over the Stage-1 survivors in bulk.
+
+    Analyzes ONLY the Stage-1 survivors (active, not hard-filtered) that lack a
+    valid cache entry, throttled to respect the Gemini free-tier rate limit and
+    continuing past any per-job provider error. With no Gemini key configured it
+    prints the 'add a key' guidance and exits cleanly. The single-job
+    ``analyze --job`` command is unchanged.
+    """
+    from jobtracker.ai.provider import NO_KEY_MESSAGE
+    from jobtracker.services import ai_service
+
+    with _session_scope() as session:
+        summary = ai_service.analyze_jobs_bulk(
+            session,
+            only_missing=only_missing,
+            limit=limit,
+            delay_seconds=delay,
+        )
+
+    if summary.unavailable:
+        typer.echo(NO_KEY_MESSAGE)
+        return
+
+    typer.echo(
+        f"screen-ai complete: considered={summary.considered}, "
+        f"analyzed={summary.analyzed}, cached_skipped={summary.cached_skipped}, "
+        f"errors={summary.errors}."
+    )
+
+
 @app.command("notify")
 def notify(
     since_hours: float | None = typer.Option(
