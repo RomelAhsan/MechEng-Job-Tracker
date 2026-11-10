@@ -84,8 +84,8 @@ Secrets are injected as environment variables and never baked into the image:
 
 ```bash
 # AI relevance engine (optional; omit to run without AI).
-# Use a REAL Google AI Studio key (looks like "AIza...").
-fly secrets set AI_PROVIDER=gemini AI_API_KEY=AIza_your_real_key AI_MODEL=gemini-1.5-flash
+# Your Google AI Studio key (it starts with "AQ.").
+fly secrets set GEMINI_API_KEY=AQ.your_key_here
 
 # Email notifications via Gmail (use a Gmail App Password, not your login).
 fly secrets set \
@@ -104,8 +104,7 @@ fly secrets set \
 > deploy.
 
 > Create a Gmail App Password at <https://myaccount.google.com/apppasswords>
-> (2-Step Verification must be on). A token like `AQ.Ab8RN6...` is **not** a
-> Gemini API key and will fail to authenticate — use an `AIza...` key.
+> (2-Step Verification must be on).
 
 ### 5. Deploy
 

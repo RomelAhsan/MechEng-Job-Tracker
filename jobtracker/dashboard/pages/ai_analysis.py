@@ -29,9 +29,9 @@ def _render_no_key_panel() -> None:
     st.warning("AI analysis is not configured yet.")
     st.markdown(
         "To enable the built-in AI relevance engine, create a free Gemini API "
-        "key at [Google AI Studio](https://aistudio.google.com/app/apikey), "
-        "then set `AI_PROVIDER=gemini` and `AI_API_KEY=AIza...` in your `.env` "
-        "and restart the dashboard."
+        "key at [Google AI Studio](https://aistudio.google.com/apikey), "
+        "then set `GEMINI_API_KEY=<your key>` in your `.env` and restart the "
+        "dashboard."
     )
     st.caption(NO_KEY_MESSAGE)
     st.info(

@@ -57,18 +57,22 @@ class Settings(BaseSettings):
     #: via NotificationLog makes the overlap safe).
     notify_poll_window_minutes: int = 180
 
-    # AI provider (optional, Phase 3). The app is KEY-READY: with no key the AI
-    # features degrade gracefully (an "add a Gemini API key" message) instead of
-    # crashing. Set ai_provider="gemini" and a REAL Google AI Studio key (looks
-    # like "AIza...") in ai_api_key to enable live analysis. The key is read
-    # only from env/.env and is never committed.
-    ai_provider: str | None = None
-    ai_api_key: str | None = None
-    #: Gemini model used for analysis when a key is configured.
-    ai_model: str = "gemini-1.5-flash"
-    #: Seconds to sleep BETWEEN provider calls in the bulk AI pass. The Gemini
-    #: 1.5 flash free tier allows ~15 requests/minute, so the 4.0s default keeps
-    #: a bulk run comfortably under that ceiling. Tests pass delay_seconds=0.
+    # Gemini AI (optional, Phase 3). Read from the GEMINI_API_KEY environment
+    # variable (or .env). AI is enabled whenever this is a non-empty string; the
+    # key format is deliberately NOT validated (Google AI Studio issues
+    # "AQ."-prefixed keys). With no key the AI features degrade gracefully to an
+    # "add a Gemini API key" message. Never hardcode or commit the key.
+    gemini_api_key: str | None = None
+    #: Gemini model used for analysis (env: GEMINI_MODEL). Measured against a
+    #: real AI Studio free-tier key: gemini-2.5-flash returns 404 (no longer
+    #: offered to new users) and the standard flash models allow only 20
+    #: requests/day, too few for a few hundred jobs. gemini-3.5-flash-lite
+    #: answers in under a second and gave the same eligible/not verdict as
+    #: gemini-3.5-flash on every job tested, so it is the default.
+    gemini_model: str = "gemini-3.5-flash-lite"
+    #: Seconds to sleep BETWEEN provider calls in the bulk AI pass, to stay
+    #: under the Gemini free-tier per-minute request limit. Tests pass
+    #: delay_seconds=0.
     ai_request_delay_seconds: float = 4.0
     #: Cap on the number of NEW analyses performed per bulk run (None =
     #: unlimited). With a cap, a first full backfill of the Stage-1 survivor set

@@ -115,16 +115,17 @@ tick next to it).
 The AI features (job analysis, tailored resumes) need a Google key. Without one
 the rest of the app works normally and the AI pages just say "add a key".
 
-1. Open **<https://aistudio.google.com/app/apikey>** and sign in.
+1. Open **<https://aistudio.google.com/apikey>** and sign in.
 2. Press **Create API key**. If it asks about a project, accept the default.
-3. Copy the key. A real one starts with **`AIza`** and is about 39 characters.
-4. Go back to
+3. Copy the key. It starts with **`AQ.`**, which is normal.
+4. Go to
    **<https://github.com/RomelAhsan/MechEng-Job-Tracker/settings/secrets/actions>**,
-   press **New repository secret**, name it `AI_API_KEY`, paste the key, save.
+   press **New repository secret**, name it **`GEMINI_API_KEY`**, paste the
+   key, and press **Add secret**.
 
-The key you sent me earlier (`AQ.Ab8RN6...`) was not an API key of this type and
-returned "401 invalid", so please use a fresh `AIza...` one. Also delete that
-old one, since it was shared in a chat.
+The next collection run uses it automatically. The free tier allows a limited
+number of AI checks per day; if it runs out, the remaining jobs are checked on
+the next run and stay visible on your page meanwhile.
 
 ---
 

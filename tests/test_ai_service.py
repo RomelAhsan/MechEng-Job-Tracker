@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from jobtracker.ai.prompts import JobPromptInput, build_analysis_prompt
 from jobtracker.ai.provider import (
     AIProvider,
+    AIProviderError,
     AIResult,
     GeminiProvider,
     NullProvider,
@@ -113,15 +114,100 @@ def _settings() -> Settings:
 
 
 def test_get_provider_returns_null_without_key() -> None:
-    assert isinstance(get_provider(Settings(ai_provider="gemini")), NullProvider)
-    assert isinstance(
-        get_provider(Settings(ai_provider=None, ai_api_key="AIzaFake")), NullProvider
+    assert isinstance(get_provider(Settings(gemini_api_key=None)), NullProvider)
+    assert isinstance(get_provider(Settings(gemini_api_key="")), NullProvider)
+    assert isinstance(get_provider(Settings(gemini_api_key="   ")), NullProvider)
+
+
+@pytest.mark.parametrize("key", ["AQ.fake-studio-key", "AIzaFake", "anything"])
+def test_get_provider_accepts_any_non_empty_key(key: str) -> None:
+    """The key format is never validated; only non-emptiness matters."""
+    provider = get_provider(Settings(gemini_api_key=key))
+    assert isinstance(provider, GeminiProvider)
+    assert provider.model == "gemini-3.5-flash-lite"
+
+
+def test_get_provider_honours_model_override() -> None:
+    provider = get_provider(
+        Settings(gemini_api_key="AQ.fake", gemini_model="gemini-3.7-flash")
+    )
+    assert provider.model == "gemini-3.7-flash"
+
+
+def test_settings_read_gemini_api_key_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.from-env")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.6-flash")
+    settings = Settings(_env_file=None)
+    assert settings.gemini_api_key == "AQ.from-env"
+    assert settings.gemini_model == "gemini-3.6-flash"
+
+
+class _FakeModels:
+    """Stands in for ``client.models``; records the call, no network."""
+
+    def __init__(self, response: object | None = None, exc: Exception | None = None):
+        self.response = response
+        self.exc = exc
+        self.calls: list[dict] = []
+
+    def generate_content(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        if self.exc is not None:
+            raise self.exc
+        return self.response
+
+
+class _FakeClient:
+    def __init__(self, models: _FakeModels) -> None:
+        self.models = models
+
+
+def test_gemini_provider_calls_sdk_and_returns_text() -> None:
+    from types import SimpleNamespace
+
+    usage = SimpleNamespace(
+        prompt_token_count=11, candidates_token_count=22, total_token_count=33
+    )
+    models = _FakeModels(SimpleNamespace(text='{"ok": true}', usage_metadata=usage))
+    provider = GeminiProvider(
+        "AQ.fake", model="gemini-3.5-flash", client=_FakeClient(models)
     )
 
+    result = provider.analyze("prompt text")
 
-def test_get_provider_returns_gemini_when_configured() -> None:
-    provider = get_provider(Settings(ai_provider="gemini", ai_api_key="AIzaFake"))
-    assert isinstance(provider, GeminiProvider)
+    assert result.text == '{"ok": true}'
+    assert result.total_tokens == 33
+    assert models.calls[0]["model"] == "gemini-3.5-flash"
+    assert models.calls[0]["contents"] == "prompt text"
+    assert models.calls[0]["config"].response_mime_type == "application/json"
+
+
+def test_gemini_provider_wraps_sdk_auth_error() -> None:
+    from google.genai import errors
+
+    exc = errors.ClientError(
+        401,
+        {
+            "error": {
+                "code": 401,
+                "message": "API key not valid.",
+                "status": "UNAUTHENTICATED",
+            }
+        },
+    )
+    provider = GeminiProvider(
+        "AQ.fake", client=_FakeClient(_FakeModels(exc=exc))
+    )
+
+    with pytest.raises(AIProviderError, match="401"):
+        provider.analyze("prompt")
+
+
+def test_gemini_provider_rejects_empty_key_only() -> None:
+    with pytest.raises(AIProviderError):
+        GeminiProvider("   ", client=_FakeClient(_FakeModels()))
 
 
 # --- Cache hit vs miss ----------------------------------------------------

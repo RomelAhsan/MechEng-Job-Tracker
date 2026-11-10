@@ -35,6 +35,8 @@ from jobtracker.ai.prompts import SPEC_FIELDS, JobPromptInput, build_analysis_pr
 from jobtracker.ai.provider import (
     AIProvider,
     AIProviderError,
+    AIQuotaExhaustedError,
+    AIRateLimitedError,
     NullProvider,
     get_provider,
 )
@@ -44,6 +46,10 @@ from jobtracker.services import user_service
 from jobtracker.settings import Settings, get_settings
 
 logger = logging.getLogger("jobtracker.services.ai")
+
+#: Longest pause the bulk pass will take for a per-minute rate limit before
+#: retrying a job once. Longer server-suggested delays are capped to this.
+MAX_RATE_LIMIT_WAIT_SECONDS = 65.0
 
 #: Allowed values for the SPEC ``recommendation`` field.
 _RECOMMENDATIONS = ("apply", "maybe", "skip")
@@ -73,6 +79,9 @@ class BulkAnalysisSummary:
     cached_skipped: int = 0
     errors: int = 0
     unavailable: bool = False
+    #: True when the pass stopped early because the daily quota ran out. The
+    #: remaining jobs are picked up by the next run (they have no cache row).
+    quota_exhausted: bool = False
 
 
 @dataclass
@@ -263,8 +272,13 @@ def analyze_job(
     provider: AIProvider | None = None,
     settings: Settings | None = None,
     force: bool = False,
+    raise_rate_limits: bool = False,
 ) -> AnalysisResult:
     """Analyze ``job_id`` against the resolved user profile.
+
+    ``raise_rate_limits`` lets the bulk pass see rate-limit / daily-quota
+    errors (so it can pause or stop) instead of receiving the generic
+    fail-soft "unavailable" result that single-job callers get.
 
     Returns a cached result when one exists for the current
     ``(job_id, description_hash, profile_version)`` key (unless ``force``).
@@ -299,6 +313,13 @@ def analyze_job(
 
     try:
         raw = active_provider.analyze(prompt)
+    except (AIRateLimitedError, AIQuotaExhaustedError):
+        if raise_rate_limits:
+            raise
+        logger.warning("AI rate limit reached for job %s", job_id)
+        return _unavailable_result(
+            job_id, "Gemini rate limit reached; try again later."
+        )
     except AIProviderError as exc:
         logger.warning("AI provider error for job %s: %s", job_id, exc)
         return _unavailable_result(
@@ -418,14 +439,39 @@ def analyze_jobs_bulk(
         if summary.analyzed > 0 and delay_seconds:
             time.sleep(delay_seconds)
 
-        try:
-            outcome = analyze_job(
+        def _run(job_id: str = job_id) -> AnalysisResult:
+            return analyze_job(
                 session,
                 job_id,
                 user_id=user_id,
                 provider=active_provider,
                 settings=settings,
+                raise_rate_limits=True,
             )
+
+        try:
+            try:
+                outcome = _run()
+            except AIRateLimitedError as exc:
+                # Per-minute limit: pause, then retry this job once.
+                wait = min(exc.retry_after_seconds, MAX_RATE_LIMIT_WAIT_SECONDS)
+                logger.info("Gemini rate limited; waiting %.0fs then retrying", wait)
+                time.sleep(wait)
+                outcome = _run()
+        except AIQuotaExhaustedError:
+            # Daily quota gone: every remaining call would fail, so stop now.
+            # Unanalyzed jobs keep no cache row and are retried next run.
+            logger.warning(
+                "Gemini daily quota exhausted after %d analyses; stopping. "
+                "Remaining jobs will be analyzed on the next run.",
+                summary.analyzed,
+            )
+            summary.quota_exhausted = True
+            break
+        except AIRateLimitedError:
+            logger.warning("Still rate limited after waiting; skipping %s", job_id)
+            summary.errors += 1
+            continue
         except Exception:  # noqa: BLE001 - one bad job never aborts the batch.
             logger.exception("Bulk AI analysis failed for job %s", job_id)
             summary.errors += 1
