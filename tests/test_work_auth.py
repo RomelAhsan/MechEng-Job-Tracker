@@ -174,6 +174,62 @@ def test_barrier_wins_over_sponsorship_phrase() -> None:
     assert result.eligibility_status == INELIGIBLE_ITAR
 
 
+def test_active_security_clearance_required_is_barrier() -> None:
+    result = extract_work_auth(
+        "Applicants must have an active security clearance.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+    assert result.citizenship_requirement
+
+
+def test_security_clearance_required_phrase_is_barrier() -> None:
+    result = extract_work_auth(
+        "An active secret security clearance is required for this role.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_must_be_able_to_obtain_clearance_is_barrier() -> None:
+    result = extract_work_auth(
+        "Candidate must be able to obtain a security clearance.",
+        country="United States",
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_top_secret_clearance_required_is_barrier() -> None:
+    result = extract_work_auth(
+        "Top secret clearance required.", country="United States"
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_clearance_on_unknown_country_is_barrier() -> None:
+    # Unknown country + explicit clearance requirement is still a hard barrier.
+    result = extract_work_auth(
+        "Must hold an active security clearance.", country=None
+    )
+    assert result.eligibility_status == INELIGIBLE_ITAR
+
+
+def test_clearance_mere_mention_not_barrier() -> None:
+    result = extract_work_auth(
+        "An active security clearance is a plus.", country="United States"
+    )
+    assert result.eligibility_status != INELIGIBLE_ITAR
+    assert result.eligibility_status == POSSIBLY_ELIGIBLE_UNKNOWN
+
+
+def test_clearance_preferred_not_barrier() -> None:
+    result = extract_work_auth(
+        "Security clearance preferred but not required.",
+        country="United States",
+    )
+    assert result.eligibility_status != INELIGIBLE_ITAR
+
+
 def test_evidence_present_or_unknown() -> None:
     # When sponsorship is unknown, evidence is empty (unknown is first-class).
     unknown = extract_work_auth("A generic description.", country="Canada")

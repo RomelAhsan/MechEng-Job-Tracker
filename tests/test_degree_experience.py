@@ -1,0 +1,148 @@
+"""Tests for the deterministic degree-level / experience extractor (Stage 1)."""
+
+from __future__ import annotations
+
+from jobtracker.extract.degree_experience import extract_degree_experience
+
+
+def test_masters_required_detected() -> None:
+    result = extract_degree_experience(
+        "Design Engineer", "A Master's degree is required for this role."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_ms_required_detected() -> None:
+    result = extract_degree_experience(
+        "R&D Engineer", "MS required in Mechanical Engineering."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_phd_required_detected() -> None:
+    result = extract_degree_experience(
+        "Research Scientist", "PhD required; doctorate in a related field."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_mba_required_detected() -> None:
+    result = extract_degree_experience(
+        "Program Lead", "An MBA is required to lead cross-functional programs."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_must_have_completed_detected() -> None:
+    result = extract_degree_experience(
+        "Engineer", "Candidates must have completed their undergraduate degree."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_bachelors_degree_required_detected() -> None:
+    result = extract_degree_experience(
+        "Mechanical Engineer", "Bachelor's degree required in engineering."
+    )
+    assert result.requires_advanced_or_completed_degree is True
+    assert result.evidence
+
+
+def test_working_toward_bachelors_not_detected() -> None:
+    result = extract_degree_experience(
+        "Mechanical Engineering Intern",
+        "Ideal for students working toward a Bachelor's degree.",
+    )
+    assert result.requires_advanced_or_completed_degree is False
+
+
+def test_currently_pursuing_not_detected() -> None:
+    result = extract_degree_experience(
+        "Co-op Student",
+        "You are currently pursuing a Bachelor's degree in engineering.",
+    )
+    assert result.requires_advanced_or_completed_degree is False
+
+
+def test_currently_enrolled_not_detected() -> None:
+    result = extract_degree_experience(
+        "Intern",
+        "Must be enrolled in an accredited engineering program; "
+        "Bachelor's degree in progress.",
+    )
+    assert result.requires_advanced_or_completed_degree is False
+
+
+def test_senior_role_detected() -> None:
+    result = extract_degree_experience(
+        "Senior Mechanical Engineer", "Join us as a senior engineer."
+    )
+    assert result.requires_senior_experience is True
+    assert result.evidence
+
+
+def test_staff_role_detected() -> None:
+    result = extract_degree_experience(
+        "Staff Engineer", "This is a staff engineer position."
+    )
+    assert result.requires_senior_experience is True
+
+
+def test_principal_role_detected() -> None:
+    result = extract_degree_experience(
+        "Principal Engineer", "We are hiring a principal engineer."
+    )
+    assert result.requires_senior_experience is True
+
+
+def test_three_plus_years_detected() -> None:
+    result = extract_degree_experience(
+        "Engineer", "Requires 3+ years of experience in product design."
+    )
+    assert result.requires_senior_experience is True
+    assert result.min_years_experience == 3
+    assert result.evidence
+
+
+def test_minimum_of_two_years_detected() -> None:
+    result = extract_degree_experience(
+        "Engineer", "Minimum of 2 years of relevant experience required."
+    )
+    assert result.requires_senior_experience is True
+    assert result.min_years_experience == 2
+
+
+def test_two_years_of_experience_detected() -> None:
+    result = extract_degree_experience(
+        "Engineer", "2 years of experience preferred."
+    )
+    assert result.min_years_experience == 2
+    assert result.requires_senior_experience is True
+
+
+def test_clean_intern_description_all_false() -> None:
+    result = extract_degree_experience(
+        "Mechanical Engineering Intern",
+        "Great opportunity for a first-year student. You will support the "
+        "design team, learn CAD, and help with prototyping. No prior "
+        "experience required.",
+    )
+    assert result.requires_advanced_or_completed_degree is False
+    assert result.requires_senior_experience is False
+    assert result.min_years_experience is None
+    assert result.evidence == []
+    assert result.reasons == []
+
+
+def test_lead_a_project_not_flagged_as_senior() -> None:
+    # "lead a project" is a responsibility, not a seniority level.
+    result = extract_degree_experience(
+        "Mechanical Engineering Intern",
+        "You will help lead a project and present results to the team.",
+    )
+    assert result.requires_senior_experience is False

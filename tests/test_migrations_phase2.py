@@ -56,15 +56,28 @@ def test_upgrade_head_on_fresh_db(
         assert {"original_base64", "raw_text", "parsed_sections"} <= mr_cols
         gr_cols = {c["name"] for c in inspector.get_columns("generated_resumes")}
         assert {"markdown", "json_sections", "pdf_base64", "change_log"} <= gr_cols
+        # FEAT-002 Stage-1 eligibility verdict + degree/experience columns.
+        job_cols = {c["name"] for c in inspector.get_columns("jobs")}
+        assert {
+            "eligible",
+            "eligibility_reasons",
+            "eligibility_evidence",
+            "eligibility_failed_rules",
+            "requires_advanced_degree",
+            "requires_senior_experience",
+            "min_years_experience",
+        } <= job_cols
+        job_indexes = {i["name"] for i in inspector.get_indexes("jobs")}
+        assert "ix_jobs_eligible" in job_indexes
     finally:
         engine.dispose()
 
 
-def test_head_is_resume_revision() -> None:
-    # FEAT-007 chained 0005_resume after 0004_ai_cache, so the head advances
-    # again. Later features chain 0006_* after this.
+def test_head_is_stage1_eligibility_revision() -> None:
+    # FEAT-002 chained 0006_stage1_eligibility after 0005_resume, so the head
+    # advances again. Later features chain 0007_* after this.
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_current_head() == "0005_resume"
+    assert script.get_current_head() == "0006_stage1_eligibility"
 
 
 def test_downgrade_roundtrip(

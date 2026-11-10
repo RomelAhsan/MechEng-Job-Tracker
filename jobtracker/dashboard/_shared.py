@@ -190,6 +190,15 @@ def render_job_card(view: JobView, *, user_id: int | None = None) -> None:
             st.warning("Concerns: " + "; ".join(view.concerns))
         if view.classification_reasons:
             st.caption("Reasons: " + "; ".join(view.classification_reasons))
+        # Stage-1 deterministic eligibility verdict. Jobs that fail the hard
+        # filter are removed from every list, so a surfaced card is normally
+        # eligible; show why it passed (and any caveats/evidence it carries).
+        if view.eligibility_reasons:
+            st.caption(
+                "Eligibility: " + "; ".join(view.eligibility_reasons)
+            )
+        if view.eligible is False and view.eligibility_evidence:
+            st.caption("Eligibility evidence: " + "; ".join(view.eligibility_evidence))
 
         link_cols = st.columns(2)
         if view.application_url:

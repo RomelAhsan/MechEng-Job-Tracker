@@ -52,6 +52,18 @@ class JobView:
     duration_months: int | None
     duration_label: str
     eligibility_status: str | None
+    #: Stage-1 deterministic hard-filter verdict (FEAT-002). ``eligible`` is
+    #: None when un-screened, True when it survived to the AI stage; a False
+    #: verdict is filtered out of every browsing view so it is never surfaced
+    #: here. ``eligibility_reasons``/``evidence`` explain the verdict and
+    #: ``eligibility_failed_rules`` lists the machine-readable rule ids.
+    eligible: bool | None
+    eligibility_reasons: list[str]
+    eligibility_evidence: list[str]
+    eligibility_failed_rules: list[str]
+    requires_advanced_degree: bool | None
+    requires_senior_experience: bool | None
+    min_years_experience: int | None
     visa_sponsorship: str
     citizenship_requirement: str
     concerns: list[str]
@@ -240,6 +252,13 @@ def _to_view(
         duration_months=job.duration_months,
         duration_label=job.duration_label or "",
         eligibility_status=job.eligibility_status,
+        eligible=job.eligible,
+        eligibility_reasons=list(job.eligibility_reasons or []),
+        eligibility_evidence=list(job.eligibility_evidence or []),
+        eligibility_failed_rules=list(job.eligibility_failed_rules or []),
+        requires_advanced_degree=job.requires_advanced_degree,
+        requires_senior_experience=job.requires_senior_experience,
+        min_years_experience=job.min_years_experience,
         visa_sponsorship=job.visa_sponsorship or "unknown",
         citizenship_requirement=job.citizenship_requirement or "",
         concerns=concerns,
@@ -358,6 +377,12 @@ def list_jobs(
         Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
         | Job.eligibility_status.is_(None)
     )
+    # Stage-1 deterministic hard filter: a job whose persisted verdict is False
+    # (full_time/new_grad, degree/experience requirement, US-citizen-only /
+    # clearance, incompatible stated term/duration, removed) is dropped
+    # everywhere the user browses, independent of include_removed and the
+    # eligibility widget. eligible IS NULL (un-screened) and True stay visible.
+    stmt = stmt.where(Job.eligible.isnot(False))
 
     last_checked = {
         company_id: checked_at
@@ -417,6 +442,7 @@ def views_for_job_ids(
             Job.eligibility_status.not_in(HARD_EXCLUDED_ELIGIBILITY)
             | Job.eligibility_status.is_(None)
         )
+        .where(Job.eligible.isnot(False))
     )
     last_checked = {
         company_id: checked_at
@@ -443,7 +469,13 @@ def list_relevant_jobs(
     new_window: timedelta = DEFAULT_NEW_WINDOW,
     user_id: int | None = None,
 ) -> list[JobView]:
-    """Active strong + possible matches for the 'Relevant For Me' page."""
+    """Active strong + possible matches for the 'Relevant For Me' page.
+
+    Delegates to :func:`list_jobs`, which now also enforces the persisted
+    Stage-1 ``eligible`` verdict (jobs with ``eligible IS False`` are dropped
+    at SQL level). FEAT-003 layers the AI relevance stage on top of these
+    Stage-1 survivors; for now the page relies on the persisted verdict.
+    """
     filters = filters or JobFilters()
     if filters.classifications:
         filters.classifications = [
@@ -482,7 +514,13 @@ def filter_options(session: Session) -> FilterOptions:
         "eligibility_statuses": set(),
         "sponsorship_statuses": set(),
     }
-    for job in session.scalars(select(Job)):
+    # Mirror the dashboard hard filters: a job the user can never browse to
+    # (ITAR / US-citizen-only, or eligible=False from Stage-1) must not seed a
+    # selectable filter value either. eligible IS NULL / True remain.
+    stmt = select(Job).where(Job.eligible.isnot(False))
+    for job in session.scalars(stmt):
+        if job.eligibility_status in HARD_EXCLUDED_ELIGIBILITY:
+            continue
         if job.classification:
             seen["classifications"].add(job.classification)
         seen["term_seasons"].add(job.term_season or "unknown")

@@ -58,6 +58,7 @@ class Job(Base):
         Index("ix_jobs_term_season", "term_season"),
         Index("ix_jobs_posted_at", "posted_at"),
         Index("ix_jobs_first_seen_at", "first_seen_at"),
+        Index("ix_jobs_eligible", "eligible"),
     )
 
     job_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -112,6 +113,22 @@ class Job(Base):
     ai_analysis: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
     raw_payload: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
     eligibility_status: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # --- Stage-1 deterministic hard-eligibility verdict (FEAT-002) ---
+    # ``eligible`` is the persisted pass/fail of the deterministic hard filter:
+    # False => removed everywhere the user browses, None => un-screened (still
+    # visible), True => survived to the AI stage. ``*_reasons/evidence`` carry
+    # the human-readable rationale and exact matched quotes; ``failed_rules``
+    # holds the machine-readable rule ids. The degree/experience fields are the
+    # persisted outputs of the degree_experience extractor used by the verdict
+    # and surfaced in the UI.
+    eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    eligibility_reasons: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    eligibility_evidence: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    eligibility_failed_rules: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
+    requires_advanced_degree: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    requires_senior_experience: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    min_years_experience: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class JobEvent(Base):
