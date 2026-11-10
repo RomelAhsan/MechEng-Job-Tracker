@@ -3,10 +3,9 @@
 # Runs on GitHub's servers, so jobs keep updating and emails keep arriving with
 # nothing running on your own computer.
 #
-# Cadence: every 2 hours. This fits the free GitHub Actions allowance for a
-# PRIVATE repository (2,000 minutes/month). If you make the repository public,
-# Actions minutes are unlimited and you can change the cron below to '0 * * * *'
-# for hourly polling.
+# Cadence: every 15 minutes. The repository is PUBLIC, so GitHub Actions
+# minutes are unlimited. The concurrency guard below ensures runs never
+# overlap even if one takes longer than 15 minutes.
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   NOTIFY_EMAIL     your Gmail address (where job alerts are sent)
@@ -22,8 +21,8 @@ name: Poll job boards
 
 on:
   schedule:
-    # Every 2 hours, on the hour (UTC).
-    - cron: "0 */2 * * *"
+    # Every 15 minutes (UTC).
+    - cron: "*/15 * * * *"
   # Adds a "Run workflow" button so you can trigger a poll on demand.
   workflow_dispatch:
 

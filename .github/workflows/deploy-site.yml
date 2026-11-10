@@ -1,0 +1,103 @@
+# Build and deploy the always-on React dashboard to GitHub Pages.
+#
+# The site is static (no server), so each deploy ALSO regenerates the data feed
+# (web/public/data/jobs.json) from the latest collected jobs, so the published
+# page is current. It runs:
+#   * on push to main that touches the web app or the exporter,
+#   * manually (workflow_dispatch),
+#   * and automatically after each "Poll job boards" run finishes, so every
+#     15-minute poll refreshes the live site.
+#
+# ONE-TIME SETUP (the repo owner must do this once, in the browser):
+#   Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "jobtracker/services/web_export_service.py"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Poll job boards"]
+    types: [completed]
+
+# Required for the official Pages deploy actions.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; let the latest finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install the backend
+        run: pip install -e .
+
+      # Pull the same DB the poller maintains so the feed reflects the latest
+      # eligible jobs. If no cache exists yet, the next step still produces a
+      # valid empty feed (export-web never fails on an empty DB).
+      - name: Restore the job database
+        uses: actions/cache/restore@v4
+        with:
+          path: jobtracker.db
+          key: jobtracker-db-site-${{ github.run_id }}
+          restore-keys: |
+            jobtracker-db-
+
+      - name: Prepare the database
+        env:
+          DATABASE_URL: sqlite:///./jobtracker.db
+        run: python -m jobtracker init-db
+
+      # Regenerate the eligible-set feed the React app reads. Reuses the exact
+      # same eligible-set query as the app (Stage-1 hard filter + Stage-2 AI
+      # gate, no-key Stage-1 fallback) -- no filtering is reimplemented here.
+      - name: Generate the job feed
+        env:
+          DATABASE_URL: sqlite:///./jobtracker.db
+        run: python -m jobtracker export-web --output web/public/data/jobs.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build the site
+        working-directory: web
+        run: npm run build
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

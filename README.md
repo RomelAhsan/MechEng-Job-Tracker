@@ -1,5 +1,12 @@
 # MechEng-Job-Tracker
 
+> ## 🌐 Live site: https://RomelAhsan.github.io/MechEng-Job-Tracker/
+> A free, always-on React page of the co-op/internship jobs you're eligible
+> for, refreshed after every collection run (~15 min). No PC, no sign-in to
+> browse. Turn it on once via **Settings → Pages → Source = GitHub Actions**.
+> It's read-only (browse/filter/apply); accounts, saved jobs, and the email
+> opt-in live in the full Streamlit app.
+>
 > ### 👉 New here? Read **[START_HERE.md](START_HERE.md)** instead.
 > It is a four-step, browser-only setup (no terminal) that gets job alerts
 > emailed to your Gmail every 2 hours, collected on GitHub's servers so your own
