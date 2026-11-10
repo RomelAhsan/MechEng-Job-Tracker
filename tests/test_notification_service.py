@@ -1,8 +1,16 @@
-"""Tests for the FEAT-005 email notification service.
+"""Tests for the FEAT-005 email notification service (FEAT-004 opt-in rules).
+
+Email is OPT-IN and EXACT-MATCH only: by default a user receives nothing, and
+once opted in the only job-level emails fired are for jobs in the user's final
+eligible set (Stage-1 survivors INTERSECT the AI-eligible gate), the same set
+shown on "Relevant For Me".
 
 The SMTP sender is never used; a :class:`RecordingSender` captures the rendered
-emails so no real email is sent and no network is touched. The temp-sqlite
-``session`` fixture from ``conftest`` provides an isolated database.
+emails so no real email is sent and no network is touched. The persisted
+Stage-1 verdict (``Job.eligible``) and the cached AI verdict
+(``AiAnalysisCache``) are seeded directly -- nothing in these tests calls a
+live provider. The temp-sqlite ``session`` fixture from ``conftest`` provides
+an isolated database.
 """
 
 from __future__ import annotations
@@ -12,9 +20,17 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from jobtracker.db.models import Company, Job, JobEvent, SavedJob, SourceHealth, User
+from jobtracker.db.models import (
+    AiAnalysisCache,
+    Company,
+    Job,
+    JobEvent,
+    SavedJob,
+    SourceHealth,
+    User,
+)
 from jobtracker.notifications.sender import STATUS_OUTBOX, EmailMessage, OutboxEmailSender
-from jobtracker.services import auth_service, notification_service, user_service
+from jobtracker.services import ai_service, auth_service, notification_service, user_service
 
 
 class RecordingSender:
@@ -61,6 +77,8 @@ def _job(
     location: str = "Toronto, ON",
     visa_sponsorship: str = "unknown",
     eligibility_status: str | None = None,
+    eligible: bool | None = None,
+    description_hash: str = "h1",
     emit_event: str | None = "new",
 ) -> Job:
     job = Job(
@@ -77,6 +95,9 @@ def _job(
         duration_label=f"{duration_months} months",
         visa_sponsorship=visa_sponsorship,
         eligibility_status=eligibility_status,
+        eligible=eligible,
+        description="Design mechanical systems and prototypes.",
+        description_hash=description_hash,
         application_url="https://apply.example.com/job/123",
         source_url="https://boards.example.com/job/123",
         status=status,
@@ -102,6 +123,39 @@ def _user(session: Session, email: str = "me@example.com") -> User:
     return auth_service.register(session, email, "pw-123456")
 
 
+def _opt_in(session: Session, user: User) -> None:
+    """Opt the user in to email (FEAT-004 default is OFF)."""
+    user_service.set_notification_prefs(
+        session, user.id, {"email_enabled": True, "email": user.email}
+    )
+
+
+def _seed_ai_verdict(
+    session: Session,
+    job: Job,
+    *,
+    user_id: int | None = None,
+    recommendation: str = "apply",
+) -> None:
+    """Seed a cached AI verdict for a job (no live provider).
+
+    The cache key must match what :func:`ai_service.get_cached` computes, so we
+    resolve the same ``profile_version`` and reuse the job's ``description_hash``.
+    """
+    _, profile_version = ai_service.resolve_profile(session, user_id=user_id)
+    session.add(
+        AiAnalysisCache(
+            job_id=job.job_id,
+            description_hash=job.description_hash,
+            profile_version=profile_version,
+            result={"recommendation": recommendation},
+            provider="mock",
+            model="mock-1",
+        )
+    )
+    session.flush()
+
+
 def test_outbox_mode_no_creds(tmp_path) -> None:
     """The outbox backend works with no credentials and writes a file."""
     sender = OutboxEmailSender(tmp_path / "outbox")
@@ -119,8 +173,42 @@ def test_outbox_mode_no_creds(tmp_path) -> None:
     assert "A new job appeared." in files[0].read_text(encoding="utf-8")
 
 
-def test_subscription_match_queues_one_email(session: Session) -> None:
+def test_no_email_by_default_even_for_strong_match(session: Session) -> None:
+    """With no prefs set, a user receives NO email even for a new strong match."""
+    _user(session)
+    company = _company(session)
+    job = _job(session, company, classification="strong_match")
+    sender = RecordingSender()
+
+    result = notification_service.run(
+        session, new_job_ids=[job.job_id], sender=sender
+    )
+
+    assert result.sent == 0
+    assert sender.messages == []
+
+
+def test_opted_in_user_emailed_for_eligible_job(session: Session) -> None:
+    """After opting in, an eligible strong match produces one email."""
     user = _user(session)
+    _opt_in(session, user)
+    company = _company(session)
+    job = _job(session, company, classification="strong_match")
+    sender = RecordingSender()
+
+    result = notification_service.run(
+        session, new_job_ids=[job.job_id], sender=sender
+    )
+
+    assert result.sent == 1
+    assert len(sender.messages) == 1
+    assert notification_service.RULE_STRONG_MATCH in result.rules
+
+
+def test_opted_in_subscription_match_attributed(session: Session) -> None:
+    """An eligible job matching a saved filter is attributed to that filter."""
+    user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     job = _job(session, company, classification="strong_match")
     user_service.create_saved_filter(
@@ -136,23 +224,22 @@ def test_subscription_match_queues_one_email(session: Session) -> None:
         session, new_job_ids=[job.job_id], sender=sender
     )
 
-    # One subscription email + one standalone strong_match rule email.
-    subjects = [m.subject for m in sender.messages]
-    assert any("Strong matches" in s for s in subjects)
-    assert result.sent >= 1
-    # The subscription rule fired exactly once for this job.
+    assert result.sent == 1
     assert notification_service.RULE_SUBSCRIPTION in result.rules
+    assert any("Strong matches" in m.subject for m in sender.messages)
 
 
-def test_non_matching_subscription_sends_nothing(session: Session) -> None:
+def test_not_emailed_for_non_eligible_job_even_if_strong_match(session: Session) -> None:
+    """A Stage-1-dropped (eligible False) strong match is never emailed."""
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
-    # A weak match should not match a strong-only subscription or fire rules.
-    job = _job(session, company, classification="weak_match", fit_score=10)
+    # Strong match, but the deterministic Stage-1 verdict dropped it.
+    job = _job(session, company, classification="strong_match", eligible=False)
     user_service.create_saved_filter(
         session,
         user.id,
-        "Strong only",
+        "Strong matches",
         {"classifications": ["strong_match"]},
         notify=True,
     )
@@ -166,33 +253,79 @@ def test_non_matching_subscription_sends_nothing(session: Session) -> None:
     assert sender.messages == []
 
 
-def test_dedup_never_sends_same_job_rule_twice(session: Session) -> None:
+def test_not_emailed_when_ai_gate_marks_ineligible(session: Session) -> None:
+    """A Stage-1 survivor the AI verdict rejects (skip) is never emailed."""
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     job = _job(session, company, classification="strong_match")
-    user_service.create_saved_filter(
-        session,
-        user.id,
-        "Strong matches",
-        {"classifications": ["strong_match"]},
-        notify=True,
+    # Cached AI verdict says skip -> dropped from the eligible set.
+    _seed_ai_verdict(session, job, user_id=user.id, recommendation="skip")
+    sender = RecordingSender()
+
+    result = notification_service.run(
+        session, new_job_ids=[job.job_id], sender=sender
     )
+
+    assert result.sent == 0
+    assert sender.messages == []
+
+
+def test_emailed_when_ai_gate_marks_eligible(session: Session) -> None:
+    """A survivor with an AI-eligible (apply) cached verdict is emailed."""
+    user = _user(session)
+    _opt_in(session, user)
+    company = _company(session)
+    job = _job(session, company, classification="strong_match")
+    _seed_ai_verdict(session, job, user_id=user.id, recommendation="apply")
+    sender = RecordingSender()
+
+    result = notification_service.run(
+        session, new_job_ids=[job.job_id], sender=sender
+    )
+
+    assert result.sent == 1
+
+
+def test_dedup_never_sends_same_job_twice(session: Session) -> None:
+    user = _user(session)
+    _opt_in(session, user)
+    company = _company(session)
+    job = _job(session, company, classification="strong_match")
     sender = RecordingSender()
 
     first = notification_service.run(session, new_job_ids=[job.job_id], sender=sender)
-    sent_first = first.sent
-    assert sent_first >= 1
+    assert first.sent == 1
 
     # A second pass over the same job must send nothing new.
     second = notification_service.run(session, new_job_ids=[job.job_id], sender=sender)
     assert second.sent == 0
-    assert second.skipped_duplicate == sent_first
-    # No additional messages were delivered.
-    assert len(sender.messages) == sent_first
+    assert second.skipped_duplicate == 1
+    assert len(sender.messages) == 1
+
+
+def test_outbox_fallback_records_when_no_smtp(session: Session, tmp_path) -> None:
+    """With no SMTP configured the real sender falls back to the outbox."""
+    from jobtracker.settings import Settings
+
+    user = _user(session)
+    _opt_in(session, user)
+    company = _company(session)
+    job = _job(session, company, classification="strong_match")
+    settings = Settings(notify_outbox_dir=str(tmp_path / "outbox"))
+
+    result = notification_service.run(
+        session, new_job_ids=[job.job_id], settings=settings
+    )
+
+    assert result.sent == 1
+    files = list((tmp_path / "outbox").glob("*.eml"))
+    assert len(files) == 1
 
 
 def test_email_body_has_all_required_fields(session: Session) -> None:
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     job = _job(
         session,
@@ -225,40 +358,9 @@ def test_email_body_has_all_required_fields(session: Session) -> None:
     assert "https://apply.example.com/job/123" in html
 
 
-def test_high_priority_possible_match_rule(session: Session) -> None:
-    _user(session)
-    company = _company(session, priority="high")
-    job = _job(session, company, classification="possible_match", fit_score=55)
-    sender = RecordingSender()
-
-    result = notification_service.run(
-        session, new_job_ids=[job.job_id], sender=sender
-    )
-
-    assert notification_service.RULE_POSSIBLE_HIGH_PRIORITY in result.rules
-
-
-def test_us_sponsorship_rule(session: Session) -> None:
-    _user(session)
-    company = _company(session)
-    job = _job(
-        session,
-        company,
-        classification="weak_match",
-        country="US",
-        visa_sponsorship="available",
-    )
-    sender = RecordingSender()
-
-    result = notification_service.run(
-        session, new_job_ids=[job.job_id], sender=sender
-    )
-
-    assert notification_service.RULE_US_SPONSORSHIP in result.rules
-
-
 def test_removed_after_saved_notification(session: Session) -> None:
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     job = _job(session, company, status="removed", emit_event="removed")
     session.add(SavedJob(user_id=user.id, job_id=job.job_id, created_at=_now()))
@@ -273,8 +375,25 @@ def test_removed_after_saved_notification(session: Session) -> None:
     assert any("removed" in m.subject.lower() for m in sender.messages)
 
 
+def test_removed_after_saved_requires_opt_in(session: Session) -> None:
+    """removed_after_saved is still gated by the opt-in _email_enabled."""
+    user = _user(session)
+    company = _company(session)
+    job = _job(session, company, status="removed", emit_event="removed")
+    session.add(SavedJob(user_id=user.id, job_id=job.job_id, created_at=_now()))
+    session.flush()
+    sender = RecordingSender()
+
+    result = notification_service.run(
+        session, removed_job_ids=[job.job_id], sender=sender
+    )
+
+    assert result.sent == 0
+
+
 def test_source_failure_notification(session: Session) -> None:
     user = _user(session)  # first user is admin
+    _opt_in(session, user)
     company = _company(session)
     session.add(
         SourceHealth(
@@ -298,7 +417,8 @@ def test_source_failure_notification(session: Session) -> None:
 def test_itar_ineligible_never_notified(session: Session) -> None:
     from jobtracker.extract.work_auth import INELIGIBLE_ITAR
 
-    _user(session)
+    user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     job = _job(
         session,
@@ -318,11 +438,9 @@ def test_itar_ineligible_never_notified(session: Session) -> None:
 
 def test_run_recent_reads_events(session: Session) -> None:
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     _job(session, company, classification="strong_match")
-    user_service.create_saved_filter(
-        session, user.id, "Strong", {"classifications": ["strong_match"]}, notify=True
-    )
     sender = RecordingSender()
 
     result = notification_service.run_recent(session, sender=sender)
@@ -332,8 +450,9 @@ def test_run_recent_reads_events(session: Session) -> None:
 
 
 def test_digest_rolls_up_into_single_email(session: Session) -> None:
-    """A user matching N jobs gets ONE digest email containing N items."""
+    """A user matching N eligible jobs gets ONE digest email containing N items."""
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     jobs = [
         _job(session, company, classification="strong_match") for _ in range(3)
@@ -365,6 +484,7 @@ def test_digest_rolls_up_into_single_email(session: Session) -> None:
 def test_digest_only_sends_undelivered_jobs(session: Session) -> None:
     """After one job is digested, a new match produces a one-item roll-up."""
     user = _user(session)
+    _opt_in(session, user)
     company = _company(session)
     _job(session, company, classification="strong_match")
     user_service.create_saved_filter(

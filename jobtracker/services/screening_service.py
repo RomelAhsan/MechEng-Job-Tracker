@@ -18,10 +18,12 @@ from sqlalchemy.orm import Session
 
 from jobtracker.config.user_loader import load_user_profile
 from jobtracker.db.models import Job
+from jobtracker.extract.degree_experience import extract_degree_experience
 from jobtracker.extract.term import extract_term
 from jobtracker.extract.work_auth import extract_work_auth
 from jobtracker.schemas.job import CanonicalJob
 from jobtracker.schemas.user_profile import UserProfile
+from jobtracker.screen.eligibility import compute_stage1_eligibility
 from jobtracker.screen.fit_score import score as compute_fit_score
 from jobtracker.screen.meche_classifier import classify
 from jobtracker.settings import get_settings
@@ -36,6 +38,8 @@ class ScreeningSummary:
     possible: int = 0
     weak: int = 0
     not_relevant: int = 0
+    #: Count of jobs that passed the Stage-1 deterministic hard filter.
+    eligible: int = 0
 
 
 def _load_profile(profile: UserProfile | None) -> UserProfile:
@@ -89,6 +93,12 @@ def screen_job(session: Session, job: Job, profile: UserProfile) -> None:
     job.sponsorship_evidence = work_auth.sponsorship_evidence
     job.eligibility_status = work_auth.eligibility_status
 
+    # Degree-level / experience prerequisites (Stage-1 deterministic filter).
+    degree_exp = extract_degree_experience(title, description)
+    job.requires_advanced_degree = degree_exp.requires_advanced_or_completed_degree
+    job.requires_senior_experience = degree_exp.requires_senior_experience
+    job.min_years_experience = degree_exp.min_years_experience
+
     # Fit score over a canonical view that reflects the freshly extracted data.
     canonical = _to_canonical(job)
     canonical.classification = job.classification
@@ -100,6 +110,15 @@ def screen_job(session: Session, job: Job, profile: UserProfile) -> None:
 
     fit = compute_fit_score(canonical, profile)
     job.fit_score = fit.score
+
+    # Stage-1 deterministic hard-eligibility verdict (SEPARATE from fit_score):
+    # a 100%-disqualifying job gets eligible=False and is removed everywhere the
+    # user browses; unknowns stay eligible and survive to the AI stage.
+    verdict = compute_stage1_eligibility(job, profile, degree_exp)
+    job.eligible = verdict.eligible
+    job.eligibility_reasons = list(verdict.reasons)
+    job.eligibility_evidence = list(verdict.evidence)
+    job.eligibility_failed_rules = list(verdict.failed_rules)
 
 
 def screen_jobs(
@@ -129,4 +148,6 @@ def screen_jobs(
             summary.weak += 1
         elif job.classification == "not_relevant":
             summary.not_relevant += 1
+        if job.eligible:
+            summary.eligible += 1
     return summary

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -31,7 +32,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.ai.prompts import SPEC_FIELDS, JobPromptInput, build_analysis_prompt
-from jobtracker.ai.provider import AIProvider, AIProviderError, get_provider
+from jobtracker.ai.provider import (
+    AIProvider,
+    AIProviderError,
+    NullProvider,
+    get_provider,
+)
 from jobtracker.config.user_loader import load_user_profile
 from jobtracker.db.models import AiAnalysisCache, Job
 from jobtracker.services import user_service
@@ -47,6 +53,26 @@ _CODE_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 class AiServiceError(ValueError):
     """Raised when the model output cannot be parsed/validated."""
+
+
+@dataclass
+class BulkAnalysisSummary:
+    """Aggregate outcome of a throttled, continue-on-error bulk AI pass.
+
+    ``considered`` is the number of Stage-1 survivors inspected, ``analyzed``
+    the number of NEW provider analyses performed, ``cached_skipped`` the number
+    skipped because a valid cache row already existed (``only_missing``), and
+    ``errors`` the number of jobs whose analysis raised (counted, never
+    aborting the batch). ``unavailable`` is True when the provider was a
+    :class:`~jobtracker.ai.provider.NullProvider` (no key) and the pass returned
+    immediately without calling it.
+    """
+
+    considered: int = 0
+    analyzed: int = 0
+    cached_skipped: int = 0
+    errors: int = 0
+    unavailable: bool = False
 
 
 @dataclass
@@ -317,6 +343,104 @@ def analyze_job(
         raw.total_tokens,
     )
     return _to_result(row, cache_hit=False)
+
+
+def analyze_jobs_bulk(
+    session: Session,
+    job_ids: list[str] | None = None,
+    *,
+    user_id: int | None = None,
+    provider: AIProvider | None = None,
+    settings: Settings | None = None,
+    only_missing: bool = True,
+    limit: int | None = None,
+    delay_seconds: float | None = None,
+) -> BulkAnalysisSummary:
+    """Throttled, cached, continue-on-error BULK AI pass over Stage-1 survivors.
+
+    Resolves the candidate jobs (when ``job_ids`` is ``None`` the Stage-1
+    SURVIVORS only, via :func:`dashboard_service.stage1_survivor_ids`, so Stage 2
+    never runs on the full corpus). With ``only_missing`` (default) jobs that
+    already have a valid cache row for the current
+    ``(job_id, description_hash, profile_version)`` are skipped. Between NEW
+    provider calls the pass sleeps ``delay_seconds`` (defaulting to
+    ``settings.ai_request_delay_seconds``) to respect the free-tier rate limit,
+    and stops after ``limit`` NEW analyses when set (defaulting to
+    ``settings.ai_bulk_max_per_run``).
+
+    Each :func:`analyze_job` call is wrapped so a rate-limit / HTTP error or one
+    bad job NEVER aborts the batch -- the error is counted and the pass
+    continues. When the provider is a :class:`NullProvider` (no key) the pass
+    returns IMMEDIATELY with ``unavailable=True`` and ``analyzed=0`` instead of
+    looping over an unavailable provider.
+    """
+    settings = settings or get_settings()
+    active_provider = provider or get_provider(settings)
+
+    # No key: do not loop calling an unavailable provider.
+    if not active_provider.available or isinstance(active_provider, NullProvider):
+        return BulkAnalysisSummary(unavailable=True)
+
+    if delay_seconds is None:
+        delay_seconds = settings.ai_request_delay_seconds
+    if limit is None:
+        limit = settings.ai_bulk_max_per_run
+
+    # Imported lazily to avoid a service import cycle at module load.
+    from jobtracker.services import dashboard_service
+
+    if job_ids is None:
+        candidate_ids = dashboard_service.stage1_survivor_ids(session)
+    else:
+        # Keep only Stage-1 survivors even when ids are supplied explicitly, so
+        # Stage 2 never runs on a hard-dropped job.
+        candidate_ids = dashboard_service.stage1_survivor_ids(
+            session, job_ids=job_ids
+        )
+
+    _, profile_version = resolve_profile(session, user_id=user_id, settings=settings)
+
+    summary = BulkAnalysisSummary()
+    for job_id in candidate_ids:
+        summary.considered += 1
+
+        if only_missing:
+            job = session.get(Job, job_id)
+            description_hash = job.description_hash if job is not None else None
+            if _find_cache(session, job_id, description_hash, profile_version):
+                summary.cached_skipped += 1
+                continue
+
+        if limit is not None and summary.analyzed >= limit:
+            break
+
+        # Throttle BETWEEN provider calls (not before the first one).
+        if summary.analyzed > 0 and delay_seconds:
+            time.sleep(delay_seconds)
+
+        try:
+            outcome = analyze_job(
+                session,
+                job_id,
+                user_id=user_id,
+                provider=active_provider,
+                settings=settings,
+            )
+        except Exception:  # noqa: BLE001 - one bad job never aborts the batch.
+            logger.exception("Bulk AI analysis failed for job %s", job_id)
+            summary.errors += 1
+            continue
+
+        if outcome.cache_hit:
+            # A valid cache row was reused (no provider call); count as skipped.
+            summary.cached_skipped += 1
+        elif outcome.available:
+            summary.analyzed += 1
+        else:
+            # Provider surfaced an error result rather than raising (fail-soft).
+            summary.errors += 1
+
+    return summary
 
 
 def override_analysis(

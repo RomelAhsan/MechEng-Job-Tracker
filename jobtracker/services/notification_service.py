@@ -11,16 +11,26 @@ All business logic lives here; the CLI, scheduler, and Streamlit layers are
 thin callers. Nothing in this module imports Streamlit or raises on missing
 SMTP credentials.
 
-SPEC notification rules implemented (one ``rule`` key per fired rule, used as
-part of the dedup key so the same job never re-notifies for the same rule):
+Email is OPT-IN and EXACT-MATCH only (FEAT-004): no account receives email
+until it sets ``email_enabled=True``, and the only job-level emails fired are
+for jobs in the user's FINAL ELIGIBLE SET -- the same set shown on "Relevant
+For Me" (Stage-1 survivors INTERSECT the AI-eligible gate). The old broad SPEC
+rules no longer trigger emails on their own; a subscription (saved filter) is
+intersected with the eligible set too, so it can never surface a non-eligible /
+non-co-op job.
 
-* ``strong_match``            -- a new strong-match job.
-* ``possible_high_priority``  -- a new possible match from a high-priority company.
-* ``spring_four_month``       -- a Spring term job of ~4-month duration.
-* ``preferred_location``      -- a job in one of the user's preferred locations.
-* ``us_sponsorship``          -- a US role that explicitly provides sponsorship.
+Active rules (one ``rule`` key per fired rule, used as part of the dedup key so
+the same job never re-notifies for the same rule):
+
+* ``strong_match``            -- a new job in the user's exact-match eligible set
+                                 (not attributable to a specific subscription).
+* ``subscription``            -- an eligible new job also matching a saved filter.
 * ``source_failure``          -- a tracked source failed its fetch.
 * ``removed_after_saved``     -- a job the user saved was removed from its board.
+
+Retained-but-disabled rule keys (``possible_high_priority``,
+``spring_four_month``, ``preferred_location``, ``us_sponsorship``) are kept only
+for NotificationLog history / back-compat and no longer fire automatically.
 """
 
 from __future__ import annotations
@@ -60,10 +70,6 @@ RULE_SUBSCRIPTION = "subscription"
 RULE_SOURCE_FAILURE = "source_failure"
 RULE_REMOVED_AFTER_SAVED = "removed_after_saved"
 RULE_DIGEST = "digest"
-
-#: Sponsorship values that count as "explicitly provided".
-_SPONSORSHIP_PROVIDED = {"available", "provided", "yes", "sponsored"}
-
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -128,15 +134,16 @@ def _is_single_user(session: Session) -> bool:
 
 
 def _email_enabled(session: Session, user_id: int) -> bool:
-    """Whether the user opted into email notifications (default: enabled).
+    """Whether the user opted into email notifications (default: DISABLED).
 
-    Absent explicit prefs we treat email as enabled so a user who created a
-    ``notify=True`` subscription still gets mail; a user can opt out by setting
-    ``email_enabled`` to ``False`` on the Notifications page.
+    Email is OPT-IN (FEAT-004): absent explicit prefs we treat email as
+    DISABLED so no account ever receives mail until it deliberately opts in by
+    setting ``email_enabled`` to ``True`` on the Notifications page. Only an
+    explicit ``prefs['email_enabled'] == True`` enables delivery.
     """
     prefs = user_service.get_notification_prefs(session, user_id)
     if "email_enabled" not in prefs:
-        return True
+        return False
     return bool(prefs["email_enabled"])
 
 
@@ -168,64 +175,12 @@ def _item(view: JobView, reason: str) -> NotificationItem:
 # --- Rule evaluation -------------------------------------------------------
 
 
-def _preferred_locations(session: Session, user_id: int) -> list[str]:
-    prefs = user_service.get_notification_prefs(session, user_id)
-    locs = prefs.get("preferred_locations") or []
-    return [str(x).strip().lower() for x in locs if str(x).strip()]
-
-
-def _evaluate_rules_for_job(
-    session: Session,
-    user_id: int,
-    view: JobView,
-    *,
-    company_priority: str,
-) -> list[tuple[str, str]]:
-    """Return a list of ``(rule, reason)`` tuples that fire for ``view``."""
-    fired: list[tuple[str, str]] = []
-
-    if view.classification == "strong_match":
-        fired.append((RULE_STRONG_MATCH, "New strong match for your profile"))
-
-    if view.classification == "possible_match" and company_priority == "high":
-        fired.append(
-            (
-                RULE_POSSIBLE_HIGH_PRIORITY,
-                "New possible match from a high-priority company",
-            )
-        )
-
-    if view.term_season == "spring" and (view.duration_months or 0) == 4:
-        fired.append(
-            (RULE_SPRING_FOUR_MONTH, "Spring term with a 4-month duration")
-        )
-
-    preferred = _preferred_locations(session, user_id)
-    if preferred and view.location:
-        loc = view.location.lower()
-        if any(p in loc for p in preferred):
-            fired.append(
-                (RULE_PREFERRED_LOCATION, "Matches a preferred location")
-            )
-
-    if (view.country or "").upper() in {"US", "USA", "UNITED STATES"}:
-        if (view.visa_sponsorship or "").lower() in _SPONSORSHIP_PROVIDED:
-            fired.append(
-                (
-                    RULE_US_SPONSORSHIP,
-                    "US role that explicitly provides visa sponsorship",
-                )
-            )
-    return fired
-
-
-def _company_priority_map(session: Session) -> dict[str, str]:
-    return {
-        company_id: (priority or "medium")
-        for company_id, priority in session.execute(
-            select(Company.id, Company.priority)
-        )
-    }
+# NOTE (FEAT-004): the broad standalone SPEC rules (possible_high_priority,
+# spring_four_month, preferred_location, us_sponsorship) are intentionally NOT
+# evaluated as automatic email triggers anymore. Email now fires ONLY on the
+# user's exact-match "Relevant For Me" set (Stage-1 survivors INTERSECT
+# AI-eligible); see ``_build_subscription_and_rule_pendings``. The rule-key
+# constants are retained for NotificationLog history/back-compat.
 
 
 # --- Dedup -----------------------------------------------------------------
@@ -284,21 +239,48 @@ def _record(
 # --- Pending builders ------------------------------------------------------
 
 
+def _user_eligible_job_ids(session: Session, user_id: int) -> set[str]:
+    """Return the user's FINAL ELIGIBLE SET (the 'Relevant For Me' set).
+
+    This is exactly what :func:`dashboard_service.list_relevant_jobs` returns
+    for the user: the Stage-1 deterministic survivors INTERSECT the Stage-2 AI
+    eligibility gate (reading the cached AI verdict with the never-empty
+    fallback). Routing email through this guarantees the emailed set never
+    diverges from the page, so a non-eligible / non-co-op job is never emailed
+    even if it is a strong_match.
+    """
+    relevant = dashboard_service.list_relevant_jobs(session, user_id=user_id)
+    return {view.job_id for view in relevant}
+
+
 def _build_subscription_and_rule_pendings(
     session: Session,
     *,
     job_ids: list[str],
     settings: Settings,
 ) -> list[PendingNotification]:
-    """Build job-level pending notifications for all users.
+    """Build EXACT-MATCH-ONLY job-level pending notifications for all users.
 
-    Covers both subscription matches (saved filters with ``notify=True``) and
-    the standalone SPEC rules (strong match, high-priority possible, etc.).
+    FEAT-004: the ONLY job-level emails fired are for jobs in the user's FINAL
+    ELIGIBLE SET -- the same set returned by
+    :func:`dashboard_service.list_relevant_jobs` (Stage-1 survivors INTERSECT
+    the AI-eligible gate). Concretely, among the newly-detected ``job_ids`` we
+    email only those also in the user's eligible set (and then deduped by
+    :class:`NotificationLog`).
+
+    The old broad SPEC rules (strong_match, possible_high_priority,
+    spring_four_month, preferred_location, us_sponsorship) no longer trigger
+    emails on their own -- a job may only be emailed when it is in the eligible
+    set. The subscription (saved-filter) path is kept but INTERSECTED with the
+    eligible set too, so a subscription can never surface a non-eligible /
+    non-co-op job.
     """
+    new_ids = set(job_ids)
+    if not new_ids:
+        return []
     views = dashboard_service.views_for_job_ids(session, job_ids)
     if not views:
         return []
-    priority_by_company = _company_priority_map(session)
     pendings: list[PendingNotification] = []
 
     for user in session.scalars(select(User)):
@@ -308,44 +290,55 @@ def _build_subscription_and_rule_pendings(
         if not to_email:
             continue
 
-        # 1) Subscription (saved-filter) matches.
+        # The user's exact-match "Relevant For Me" set, intersected with the
+        # just-detected jobs: this is the ONLY set that may be emailed.
+        eligible_ids = _user_eligible_job_ids(session, user.id) & new_ids
+        if not eligible_ids:
+            continue
+
+        # Which of the eligible new jobs matched one of the user's notify
+        # subscriptions (so we can attribute the email to that subscription).
         subs = [s for s in user_service.list_saved_filters(session, user.id) if s.notify]
+        sub_name_by_job: dict[str, str] = {}
         for sub in subs:
             jf: JobFilters = dashboard_service.filters_from_dict(sub.filter_json)
-            for view in views.values():
-                if view.status != "active":
+            for job_id in eligible_ids:
+                if job_id in sub_name_by_job:
                     continue
-                if not dashboard_service.matches_filters(view, jf):
+                view = views.get(job_id)
+                if view is None or view.status != "active":
                     continue
-                reason = f"Matches your subscription '{sub.name}'"
+                if dashboard_service.matches_filters(view, jf):
+                    sub_name_by_job[job_id] = sub.name
+
+        for job_id in eligible_ids:
+            view = views.get(job_id)
+            if view is None or view.status != "active":
+                continue
+            sub_name = sub_name_by_job.get(job_id)
+            if sub_name is not None:
+                reason = f"Matches your subscription '{sub_name}'"
                 pendings.append(
                     PendingNotification(
                         user_id=user.id,
                         to_email=to_email,
                         rule=RULE_SUBSCRIPTION,
-                        channel=sub.channel or DEFAULT_CHANNEL,
-                        subject=f"New job matching '{sub.name}': {view.title}",
-                        intro=f"A new posting matches your subscription '{sub.name}':",
+                        channel=DEFAULT_CHANNEL,
+                        subject=f"New job matching '{sub_name}': {view.title}",
+                        intro=f"A new posting matches your subscription '{sub_name}':",
                         items=[_item(view, reason)],
                         job_id=view.job_id,
                     )
                 )
-
-        # 2) Standalone SPEC rules.
-        for view in views.values():
-            if view.status != "active":
-                continue
-            priority = priority_by_company.get(view.company_id, "medium")
-            for rule, reason in _evaluate_rules_for_job(
-                session, user.id, view, company_priority=priority
-            ):
+            else:
+                reason = "New job matching all your criteria (Relevant For Me)"
                 pendings.append(
                     PendingNotification(
                         user_id=user.id,
                         to_email=to_email,
-                        rule=rule,
+                        rule=RULE_STRONG_MATCH,
                         channel=DEFAULT_CHANNEL,
-                        subject=f"{reason}: {view.title}",
+                        subject=f"New relevant job: {view.title}",
                         intro=f"{reason}:",
                         items=[_item(view, reason)],
                         job_id=view.job_id,
@@ -633,13 +626,16 @@ def send_digest(
         subs = [s for s in user_service.list_saved_filters(session, user.id) if s.notify]
         if not subs:
             continue
+        # Intersect subscription matches with the user's exact-match eligible
+        # set so a digest can never surface a non-eligible / non-co-op job.
+        eligible_ids = _user_eligible_job_ids(session, user.id)
         matched: dict[str, NotificationItem] = {}
         for sub in subs:
             jf = dashboard_service.filters_from_dict(sub.filter_json)
             for view in views.values():
                 if view.status != "active":
                     continue
-                if view.job_id in matched:
+                if view.job_id in matched or view.job_id not in eligible_ids:
                     continue
                 if dashboard_service.matches_filters(view, jf):
                     matched[view.job_id] = _item(

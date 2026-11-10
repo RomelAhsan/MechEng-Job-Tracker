@@ -100,6 +100,18 @@ jobs:
       - name: Screen and score the postings
         run: python -m jobtracker screen
 
+      # Stage-2 AI judgment over the Stage-1 survivors, throttled for the
+      # Gemini free tier. Only effective when AI_API_KEY is set; with no key it
+      # prints the "add a key" guidance and no-ops. Runs BEFORE notify so the
+      # cached AI verdict is available when the exact-match eligible set (which
+      # drives emailing) is computed.
+      - name: Screen with AI (optional, throttled)
+        run: python -m jobtracker screen-ai --only-missing
+
+      # Email is OPT-IN and EXACT-MATCH only: this emails ONLY users who opted
+      # in, and ONLY about jobs in their final eligible "Relevant For Me" set
+      # (Stage-1 survivors INTERSECT the AI-eligible gate). Broad rule matches
+      # no longer trigger email. With no SMTP creds the emails go to the outbox.
       - name: Email newly found matches
         run: python -m jobtracker notify --since-hours 6
 

@@ -107,6 +107,25 @@ _ITAR_BARRIER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Security-clearance REQUIREMENT barrier. An active or obtainable U.S. security
+# clearance (confidential / secret / top secret / TS/SCI) is something a
+# Canadian citizen cannot satisfy, so an explicit clearance *requirement* on a
+# U.S.-or-unknown-country role is a hard barrier. A bare mention such as
+# "clearance is a plus" / "clearance preferred" is NOT a barrier and must stay
+# visible, so the requirement-framing ("required", "must have / be able to
+# obtain", "must hold", "active ... required") is part of the pattern.
+_CLEARANCE_BARRIER_RE = re.compile(
+    r"(?:active\s+)?(?:(?:top[-\s]*)?secret|confidential|ts/sci|dod)?\s*"
+    r"security\s+clearance\s+(?:is\s+)?required"
+    r"|must\s+(?:have|hold|possess|be\s+able\s+to\s+obtain|obtain)\s+"
+    r"(?:an?\s+)?(?:active\s+)?(?:(?:top[-\s]*)?secret|confidential|ts/sci|dod)?\s*"
+    r"security\s+clearance"
+    r"|(?:active\s+)?(?:(?:top[-\s]*)?secret|ts/sci)\s+clearance\s+required"
+    r"|requires?\s+(?:an?\s+)?(?:active\s+)?(?:(?:top[-\s]*)?secret|"
+    r"confidential|ts/sci)?\s*security\s+clearance",
+    re.IGNORECASE,
+)
+
 # Bare-keyword arms: ``itar``, ``export control``, ``\bEAR\b`` and a bare
 # ``U.S. person`` mention name a TOPIC/SKILL and are NOT barriers on their own
 # ("ITAR experience a plus", "export control training provided"). They only
@@ -137,10 +156,16 @@ _ITAR_KEYWORD_RE = re.compile(
 def _match_itar(text: str) -> re.Match[str] | None:
     """Return an ITAR/US-citizen-only barrier match, or None.
 
-    Explicit-barrier phrasings match on their own; bare topic/skill keywords
-    only match when framed as a requirement so mere mentions stay visible.
+    Explicit-barrier phrasings (US-citizen/US-person only, ITAR, and an
+    explicit security-clearance *requirement*) match on their own; bare
+    topic/skill keywords only match when framed as a requirement so mere
+    mentions ("clearance a plus", "ITAR experience preferred") stay visible.
     """
-    return _ITAR_BARRIER_RE.search(text) or _ITAR_KEYWORD_RE.search(text)
+    return (
+        _ITAR_BARRIER_RE.search(text)
+        or _CLEARANCE_BARRIER_RE.search(text)
+        or _ITAR_KEYWORD_RE.search(text)
+    )
 
 
 @dataclass
@@ -209,7 +234,10 @@ def extract_work_auth(
         if not result.sponsorship_evidence:
             result.sponsorship_evidence = quote
         result.eligibility_status = INELIGIBLE_ITAR
-        result.reasons.append(f"ITAR/US-citizen-only requirement: {quote}")
+        result.reasons.append(
+            "ITAR / US-person / US-citizen-only / security-clearance "
+            f"requirement: {quote}"
+        )
         return result
 
     if us_citizen is not None:
