@@ -37,7 +37,7 @@ permissions:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     # Secrets are read here at the job level. The `secrets` context is NOT
     # available in a step-level `if`, so the steps below gate on `env` instead.
@@ -125,8 +125,20 @@ jobs:
       # prints the "add a key" guidance and no-ops. Runs BEFORE notify so the
       # cached AI verdict is available when the exact-match eligible set (which
       # drives emailing) is computed.
+      # Cap the AI work per run so this step ALWAYS finishes and the DB save +
+      # site build below still run. On a fresh database there can be hundreds of
+      # never-analyzed survivors; at the throttled free-tier pace they cannot
+      # all be done in one run, and an unbounded step hit the job timeout and
+      # got cancelled (losing the run's progress). --limit analyzes a bounded
+      # batch of the still-missing survivors each run and the backlog drains
+      # across successive runs (every 15 min); already-analyzed jobs are cached
+      # and skipped, so later runs only touch genuinely new postings. A
+      # step-level timeout is a final backstop. The daily free-tier quota is
+      # handled gracefully in-app (the pass stops cleanly and resumes next run).
       - name: Screen with AI (optional, throttled)
-        run: python -m jobtracker screen-ai --only-missing
+        timeout-minutes: 30
+        continue-on-error: true
+        run: python -m jobtracker screen-ai --only-missing --limit 150
 
       # EMAILING IS DISABLED (turned off at the user's request). The collector
       # still polls, screens, and publishes the site every run -- it just does
