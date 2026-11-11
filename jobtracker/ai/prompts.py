@@ -159,3 +159,68 @@ def build_analysis_prompt(profile: dict, job: JobPromptInput) -> str:
         "Description (cleaned text):\n"
         f"{description}\n"
     )
+
+
+#: Characters of each job's description included in a BATCH prompt. Much shorter
+#: than the single-job limit so many jobs fit in one request without blowing the
+#: token budget -- eligibility (term/duration/degree/experience/citizenship/
+#: mechanical-fit) is decided from the title + the opening of the description,
+#: which this comfortably covers.
+MAX_BATCH_DESCRIPTION_CHARS = 1500
+
+
+def _batch_job_block(index: int, job: JobPromptInput) -> str:
+    """Compact per-job block for a batch prompt, tagged with a stable index."""
+    description = truncate_description(
+        job.description, limit=MAX_BATCH_DESCRIPTION_CHARS
+    )
+    skills = ", ".join(job.skills) or "(none listed)"
+    reqs = "; ".join(job.requirements[:8]) or "(none listed)"
+    return (
+        f"--- JOB {index} ---\n"
+        f"Title: {job.title}\n"
+        f"Company: {job.company}\n"
+        f"Location: {job.location}\n"
+        f"Term/Season: {job.term_season}\n"
+        f"Duration: {job.duration_label}\n"
+        f"Citizenship requirement: {job.citizenship_requirement or 'unknown'}\n"
+        f"Visa sponsorship: {job.visa_sponsorship or 'unknown'}\n"
+        f"Skills: {skills}\n"
+        f"Requirements: {reqs}\n"
+        f"Description: {description}\n"
+    )
+
+
+def build_batch_analysis_prompt(
+    profile: dict, jobs: list[JobPromptInput]
+) -> str:
+    """Build ONE prompt that asks the model to assess MANY jobs at once.
+
+    This is the efficiency path: instead of one request per job (which exhausts
+    the free-tier daily request quota), a single request carries a batch of
+    jobs and the model returns a JSON ARRAY of per-job verdicts, each tagged
+    with the integer ``index`` it was given so the caller can map results back
+    to jobs reliably even if the model reorders or drops one.
+
+    The required per-job object uses the SAME SPEC fields as the single-job
+    prompt, plus an ``index`` echoing the job's number.
+    """
+    blocks = "\n".join(_batch_job_block(i, j) for i, j in enumerate(jobs))
+    return (
+        "You are a co-op job relevance assistant for a University of Waterloo "
+        "Mechanical Engineering student. Assess how well EACH job below fits "
+        "the student's profile.\n\n"
+        "Return STRICT JSON ONLY: a JSON ARRAY with ONE object per job, no "
+        "markdown, no code fences, no prose before or after. Each object MUST "
+        "contain an integer \"index\" (echoing the JOB number it refers to) "
+        "plus EXACTLY these keys:\n"
+        f"{_schema_block()}\n\n"
+        "Return exactly one object for every job index provided. Rules: never "
+        "invent requirements; base evidence on the provided text; if something "
+        "is unknown say so and lower the confidence; recommendation must be one "
+        "of apply, maybe, or skip.\n\n"
+        "=== STUDENT PROFILE ===\n"
+        f"{build_profile_summary(profile)}\n\n"
+        "=== JOBS ===\n"
+        f"{blocks}\n"
+    )

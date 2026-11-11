@@ -170,15 +170,39 @@ def infer_remote_status(title: str, description: str) -> RemoteStatus:
 
 
 def infer_employment_type(title: str, description: str, hint: str | None) -> EmploymentType:
-    """Infer employment type from title/description/hint, default unknown."""
-    text = " ".join(filter(None, [title, hint or "", description]))
-    if _COOP_RE.search(text):
+    """Infer employment type from title/description/hint, default unknown.
+
+    The TITLE is authoritative. A "New Grad" / "New Graduate" title is a
+    disqualifying signal that previously lost to an incidental "internship"
+    mention in the body (e.g. a posting whose description references the
+    company's "internship and new-grad programs"), so such roles slipped onto
+    the eligible page. We therefore resolve the title first, and within the
+    title check new-grad BEFORE internship. Only when the title is silent do we
+    fall back to the description/hint, still preferring the disqualifying
+    new-grad / full-time signals over a stray intern mention.
+    """
+    title_text = title or ""
+    # 1) Title wins. Co-op and internship are the roles we want; new-grad is a
+    #    disqualifier that must be seen before a same-title "intern" token.
+    if _COOP_RE.search(title_text):
         return EmploymentType.CO_OP
-    if _INTERN_RE.search(text):
-        return EmploymentType.INTERNSHIP
-    if _NEWGRAD_RE.search(text):
+    if _NEWGRAD_RE.search(title_text):
         return EmploymentType.NEW_GRAD
-    if _FULLTIME_RE.search(text):
+    if _INTERN_RE.search(title_text):
+        return EmploymentType.INTERNSHIP
+    if _FULLTIME_RE.search(title_text):
+        return EmploymentType.FULL_TIME
+
+    # 2) Title silent -> consult hint + description. Still check new-grad before
+    #    internship so a body that mentions both does not mask the disqualifier.
+    body = " ".join(filter(None, [hint or "", description or ""]))
+    if _COOP_RE.search(body):
+        return EmploymentType.CO_OP
+    if _NEWGRAD_RE.search(body):
+        return EmploymentType.NEW_GRAD
+    if _INTERN_RE.search(body):
+        return EmploymentType.INTERNSHIP
+    if _FULLTIME_RE.search(body):
         return EmploymentType.FULL_TIME
     return EmploymentType.UNKNOWN
 
