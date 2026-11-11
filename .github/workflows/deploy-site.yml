@@ -65,6 +65,19 @@ jobs:
           restore-keys: |
             jobtracker-db-
 
+      # A cached SQLite file from an interrupted run can be corrupt
+      # ("database disk image is malformed"); that must not fail the whole
+      # deploy. Drop a corrupt/missing DB so init-db rebuilds a clean (empty)
+      # one and the feed is simply empty until the next good poll.
+      - name: Verify the database is not corrupt
+        run: |
+          if [ -f jobtracker.db ]; then
+            if ! sqlite3 jobtracker.db "PRAGMA integrity_check;" | grep -q '^ok$'; then
+              echo "::warning::Cached database is corrupt; building an empty feed."
+              rm -f jobtracker.db
+            fi
+          fi
+
       - name: Prepare the database
         env:
           DATABASE_URL: sqlite:///./jobtracker.db
@@ -73,6 +86,7 @@ jobs:
       # Regenerate the eligible-set feed the React app reads. Reuses the exact
       # same eligible-set query as the app (Stage-1 hard filter + Stage-2 AI
       # gate, no-key Stage-1 fallback) -- no filtering is reimplemented here.
+      # export-web always writes a valid file, even on an empty DB.
       - name: Generate the job feed
         env:
           DATABASE_URL: sqlite:///./jobtracker.db
