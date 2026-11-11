@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     #: Stage-1 survivors after polling + screening. Safe default OFF so plain
     #: CLI users (and no-key deployments) see no behaviour change.
     ai_analyze_on_poll: bool = False
+    #: Jobs assessed per Gemini request in the bulk pass. The free tier limits
+    #: REQUESTS per day (~250), not jobs, so batching many jobs into one request
+    #: is what lets the whole survivor set be screened within the quota. 1
+    #: restores the old one-job-per-request behaviour. ~12 keeps each prompt
+    #: well within the token budget with truncated per-job descriptions.
+    ai_batch_size: int = 12
 
     # HTTP / connectors
     http_timeout: float = 30.0

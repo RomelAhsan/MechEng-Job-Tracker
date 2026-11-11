@@ -16,6 +16,7 @@ already-persisted ``eligibility_status`` (from
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from jobtracker.extract.degree_experience import DegreeExperienceExtraction
@@ -30,6 +31,35 @@ from jobtracker.schemas.user_profile import UserProfile
 #: non-co-op/internship type hard-fails; UNKNOWN never fails (leniency).
 _DISQUALIFYING_EMPLOYMENT_TYPES: frozenset[str] = frozenset(
     {EmploymentType.FULL_TIME.value, EmploymentType.NEW_GRAD.value}
+)
+
+# Student-role signals. If ANY of these appear in the title/description the role
+# is plausibly for a student and must NOT be hard-failed by the professional-
+# title rule below -- it stays ambiguous and goes to the AI stage.
+_STUDENT_SIGNAL_RE = re.compile(
+    r"\b(?:intern(?:ship)?|co-?op|student|work\s+term|placement|"
+    r"undergraduate|new\s*grad(?:uate)?|university|campus|"
+    r"emerging\s+talent|early\s+career|apprentice(?:ship)?)\b",
+    re.IGNORECASE,
+)
+
+# Clearly-professional role TITLES (full-time positions). These are matched
+# against the TITLE ONLY, and only hard-fail when NO student signal appears
+# anywhere -- so "Manufacturing Engineering Internship" (student) and a bare
+# "Manufacturing Engineer" (professional) are treated differently. This catches
+# the common case of a full-time posting whose title omits the word
+# "full-time" (e.g. "Build Engineer", "Operations Engineer") that would
+# otherwise sit in UNKNOWN and lean entirely on the quota-limited AI stage.
+# Deliberately NARROW: it needs a definite professional-role noun; a vague or
+# genuinely ambiguous title has no match and still passes to AI.
+_PROFESSIONAL_TITLE_RE = re.compile(
+    r"\b(?:"
+    r"manager|director|head\s+of|vice\s+president|vp|chief|"
+    r"lead\b|supervisor|administrator|coordinator|"
+    r"accountant|controller|recruiter|"
+    r"technician|operator|machinist|welder|fabricator"
+    r")\b",
+    re.IGNORECASE,
 )
 
 
@@ -84,6 +114,27 @@ def compute_stage1_eligibility(
             "employment_type",
             f"Employment type {employment_type} is not co-op/internship.",
             employment_type,
+        )
+
+    # (2b) Clearly-professional role TITLE with NO student signal anywhere.
+    # Covers the common full-time posting whose title omits "full-time" (e.g.
+    # "Operations Manager", "Lead Technician") and would otherwise sit in the
+    # UNKNOWN bucket, relying entirely on the quota-limited AI stage to drop it.
+    # Narrow by design: a genuinely ambiguous title (no professional-role noun)
+    # does NOT match and still passes to AI, honoring the leniency rule.
+    title = getattr(job, "title", None) or ""
+    description = getattr(job, "description", None) or ""
+    if (
+        employment_type not in _DISQUALIFYING_EMPLOYMENT_TYPES
+        and _PROFESSIONAL_TITLE_RE.search(title)
+        and not _STUDENT_SIGNAL_RE.search(f"{title}\n{description}")
+    ):
+        match = _PROFESSIONAL_TITLE_RE.search(title)
+        _fail(
+            "professional_role",
+            "Title is a professional (non-student) role with no co-op/intern "
+            "signal.",
+            match.group(0) if match else None,
         )
 
     # (3)/(4) ITAR + citizenship/sponsorship: read the persisted status (never

@@ -83,7 +83,13 @@ class FailingOnceProvider(AIProvider):
 
 
 def _settings() -> Settings:
-    return Settings(user_file="config/user.yaml")
+    # These tests exercise the one-request-per-job loop, so pin batch_size=1.
+    # The batched path (default) has its own tests below.
+    return Settings(user_file="config/user.yaml", ai_batch_size=1)
+
+
+def _batch_settings(size: int = 12) -> Settings:
+    return Settings(user_file="config/user.yaml", ai_batch_size=size)
 
 
 def _seed(session: Session) -> None:

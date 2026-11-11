@@ -31,12 +31,18 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from jobtracker.ai.prompts import SPEC_FIELDS, JobPromptInput, build_analysis_prompt
+from jobtracker.ai.prompts import (
+    SPEC_FIELDS,
+    JobPromptInput,
+    build_analysis_prompt,
+    build_batch_analysis_prompt,
+)
 from jobtracker.ai.provider import (
     AIProvider,
     AIProviderError,
     AIQuotaExhaustedError,
     AIRateLimitedError,
+    AIResult,
     NullProvider,
     get_provider,
 )
@@ -366,6 +372,126 @@ def analyze_job(
     return _to_result(row, cache_hit=False)
 
 
+def parse_strict_json_array(text: str) -> list[dict]:
+    """Parse the model's batch output into a list of per-job SPEC dicts.
+
+    Robust to code-fence wrapping. Each element is validated with the same
+    per-job rules as :func:`parse_strict_json` AND must carry an integer
+    ``index`` so the caller can map it back to the job it was given. A malformed
+    element is skipped (not fatal) so one bad entry never discards the batch.
+    """
+    cleaned = strip_code_fences(text)
+    if not cleaned:
+        raise AiServiceError("Empty AI batch response.")
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise AiServiceError(f"AI batch response was not valid JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise AiServiceError("AI batch response must be a JSON array.")
+
+    parsed: list[dict] = []
+    for element in data:
+        if not isinstance(element, dict) or "index" not in element:
+            continue
+        try:
+            index = int(element["index"])
+        except (TypeError, ValueError):
+            continue
+        try:
+            fields = parse_strict_json(json.dumps(element))
+        except AiServiceError:
+            # Skip a single malformed per-job object; the rest still apply.
+            continue
+        fields["index"] = index
+        parsed.append(fields)
+    return parsed
+
+
+def _store_analysis(
+    session: Session,
+    job: Job,
+    parsed: dict,
+    profile_version: int,
+    raw: AIResult,
+) -> AiAnalysisCache:
+    """Persist one parsed analysis to the cache + Job row (shared by batch)."""
+    now = datetime.now(UTC)
+    row = _find_cache(session, job.job_id, job.description_hash, profile_version)
+    if row is None:
+        row = AiAnalysisCache(
+            job_id=job.job_id,
+            description_hash=job.description_hash,
+            profile_version=profile_version,
+            created_at=now,
+        )
+        session.add(row)
+    row.result = parsed
+    row.confidence = _coerce_confidence(parsed)
+    row.provider = raw.provider
+    row.model = raw.model
+    row.prompt_tokens = raw.prompt_tokens
+    row.completion_tokens = raw.completion_tokens
+    row.total_tokens = raw.total_tokens
+    row.overridden = False
+    row.updated_at = now
+    session.flush()
+    job.ai_analysis = parsed
+    return row
+
+
+def analyze_jobs_batch(
+    session: Session,
+    job_ids: list[str],
+    *,
+    user_id: int | None = None,
+    provider: AIProvider | None = None,
+    settings: Settings | None = None,
+) -> int:
+    """Analyze several jobs in ONE provider request; return count stored.
+
+    Builds a single batch prompt for ``job_ids``, sends one request, maps each
+    returned object back to its job by the echoed ``index``, and stores each
+    valid result. Rate-limit / quota errors propagate to the caller (the bulk
+    loop decides whether to wait or stop). A job whose result is missing from
+    the response is simply left un-cached and retried on a later run.
+    """
+    settings = settings or get_settings()
+    active_provider = provider or get_provider(settings)
+    _, profile_version = resolve_profile(session, user_id=user_id, settings=settings)
+
+    jobs = [session.get(Job, jid) for jid in job_ids]
+    jobs = [j for j in jobs if j is not None]
+    if not jobs:
+        return 0
+
+    prompt = build_batch_analysis_prompt(
+        resolve_profile(session, user_id=user_id, settings=settings)[0],
+        [_job_prompt_input(j, j.company_id) for j in jobs],
+    )
+    raw = active_provider.analyze(prompt)  # may raise rate-limit/quota errors
+    if not raw.available:
+        return 0
+
+    by_index = {d["index"]: d for d in parse_strict_json_array(raw.text)}
+    stored = 0
+    for i, job in enumerate(jobs):
+        parsed = by_index.get(i)
+        if parsed is None:
+            continue
+        parsed.pop("index", None)
+        _store_analysis(session, job, parsed, profile_version, raw)
+        stored += 1
+    logger.info(
+        "AI batch stored %d/%d analyses (provider=%s model=%s)",
+        stored,
+        len(jobs),
+        raw.provider,
+        raw.model,
+    )
+    return stored
+
+
 def analyze_jobs_bulk(
     session: Session,
     job_ids: list[str] | None = None,
@@ -421,17 +547,74 @@ def analyze_jobs_bulk(
 
     _, profile_version = resolve_profile(session, user_id=user_id, settings=settings)
 
+    # Which survivors actually need a NEW analysis (skip cached ones up front).
     summary = BulkAnalysisSummary()
+    todo: list[str] = []
     for job_id in candidate_ids:
         summary.considered += 1
-
         if only_missing:
             job = session.get(Job, job_id)
             description_hash = job.description_hash if job is not None else None
             if _find_cache(session, job_id, description_hash, profile_version):
                 summary.cached_skipped += 1
                 continue
+        todo.append(job_id)
+    if limit is not None:
+        todo = todo[:limit]
 
+    batch_size = max(1, getattr(settings, "ai_batch_size", 1))
+
+    # BATCHED path: assess many jobs per request so the free-tier DAILY REQUEST
+    # quota (~250 requests) covers hundreds of jobs. This is the efficiency win.
+    if batch_size > 1:
+        for start in range(0, len(todo), batch_size):
+            group = todo[start : start + batch_size]
+            if summary.analyzed > 0 and delay_seconds:
+                time.sleep(delay_seconds)
+            try:
+                try:
+                    stored = analyze_jobs_batch(
+                        session,
+                        group,
+                        user_id=user_id,
+                        provider=active_provider,
+                        settings=settings,
+                    )
+                except AIRateLimitedError as exc:
+                    wait = min(exc.retry_after_seconds, MAX_RATE_LIMIT_WAIT_SECONDS)
+                    logger.info("Gemini rate limited; waiting %.0fs then retrying", wait)
+                    time.sleep(wait)
+                    stored = analyze_jobs_batch(
+                        session,
+                        group,
+                        user_id=user_id,
+                        provider=active_provider,
+                        settings=settings,
+                    )
+            except AIQuotaExhaustedError:
+                logger.warning(
+                    "Gemini daily quota exhausted after %d analyses; stopping. "
+                    "Remaining jobs will be analyzed on the next run.",
+                    summary.analyzed,
+                )
+                summary.quota_exhausted = True
+                break
+            except AIRateLimitedError:
+                logger.warning("Still rate limited after waiting; skipping batch.")
+                summary.errors += len(group)
+                continue
+            except Exception:  # noqa: BLE001 - one bad batch never aborts the pass.
+                logger.exception("Bulk AI batch failed (%d jobs)", len(group))
+                summary.errors += len(group)
+                continue
+            summary.analyzed += stored
+            # Any job the model omitted from the response stays un-cached and
+            # is retried next run; count it as an error for visibility.
+            summary.errors += len(group) - stored
+        return summary
+
+    # SINGLE-JOB path (batch_size == 1): one request per job.
+    for job_id in todo:
         if limit is not None and summary.analyzed >= limit:
             break
 
