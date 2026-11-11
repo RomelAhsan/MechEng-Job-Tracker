@@ -86,10 +86,15 @@ _ENROLLED_RE = re.compile(
 # is boilerplate, not a prerequisite on the candidate. (Guards against "lead a
 # project" / "team lead opportunities" by requiring the role-noun shape.)
 _SENIORITY_TITLE_RE = re.compile(
-    r"\b(?:senior|staff|principal)\s+(?:[a-z]+\s+){0,2}?"
+    # "senior"/"sr"/"sr."/"snr" + up to 2 qualifier words + a role noun. The
+    # "sr"/"snr" abbreviations are extremely common in posting titles
+    # ("Sr. Mechanical Engineer", "Sr Manufacturing Accountant") and a
+    # first-year cannot fill any of them, so they must hard-fail too.
+    r"\b(?:senior|sr|snr|staff|principal)\.?\s+(?:[a-z&.]+\s+){0,2}?"
     r"(?:engineer|developer|scientist|designer|analyst|"
-    r"manager|architect|specialist|role|position|level)\b"
-    r"|\b(?:senior|staff|principal|lead)[-\s]level\b"
+    r"manager|architect|specialist|accountant|planner|lead|director|"
+    r"role|position|level)\b"
+    r"|\b(?:senior|sr|snr|staff|principal|lead)[-\s]level\b"
     r"|\blead\s+engineer\b",
     re.IGNORECASE,
 )

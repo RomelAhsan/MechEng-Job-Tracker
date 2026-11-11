@@ -137,6 +137,29 @@ def test_principal_role_detected() -> None:
     assert result.requires_senior_experience is True
 
 
+def test_sr_abbreviation_in_title_detected() -> None:
+    # "Sr." / "Sr" / "SR." / "Snr" abbreviations are as common as the full word
+    # "Senior" in real posting titles; a first-year cannot fill any of them.
+    for title in (
+        "Sr. Mechanical Engineer",
+        "Sr Manufacturing Operations Accountant",
+        "SR. Design Engineer",
+        "Snr Project Manager",
+    ):
+        result = extract_degree_experience(title, "")
+        assert result.requires_senior_experience is True, title
+
+
+def test_sr_mention_of_colleague_in_description_not_detected() -> None:
+    # A senior COLLEAGUE referenced in the body is boilerplate, not a
+    # prerequisite on the candidate -- the intern title must survive.
+    result = extract_degree_experience(
+        "Mechanical Engineering Intern",
+        "You will report to a senior engineer and join our sr team's program.",
+    )
+    assert result.requires_senior_experience is False
+
+
 def test_three_plus_years_detected() -> None:
     result = extract_degree_experience(
         "Engineer", "Requires 3+ years of experience in product design."

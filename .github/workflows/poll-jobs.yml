@@ -84,6 +84,27 @@ jobs:
           restore-keys: |
             jobtracker-db-
 
+      # A cache saved from an interrupted/overlapping run can be a half-written,
+      # CORRUPT SQLite file ("database disk image is malformed"). Restoring it
+      # would make every step fail, and the run would then save the corrupt file
+      # straight back -- a self-perpetuating loop. Guard against it: verify the
+      # restored DB with PRAGMA integrity_check and, if it is missing or
+      # corrupt, delete it so the next step rebuilds a clean one. Losing the
+      # "already seen" history only means the next run re-baselines; it does not
+      # produce duplicate emails (emailing is off) and self-heals immediately.
+      - name: Verify the database is not corrupt
+        run: |
+          if [ -f jobtracker.db ]; then
+            if ! sqlite3 jobtracker.db "PRAGMA integrity_check;" | grep -q '^ok$'; then
+              echo "::warning::Restored database is corrupt; starting fresh."
+              rm -f jobtracker.db
+            else
+              echo "Database integrity check passed."
+            fi
+          else
+            echo "No cached database; a fresh one will be created."
+          fi
+
       - name: Apply database migrations
         run: python -m jobtracker init-db
 
@@ -123,10 +144,23 @@ jobs:
       - name: Report source health
         run: python -m jobtracker health
 
-      # Saved under a fresh key each run; the restore step above picks up the
-      # newest one. Runs even on failure so a partial poll is not lost.
+      # Verify the DB is still intact, THEN save it. Only saving a
+      # known-good DB (and only when the run's steps succeeded) is what breaks
+      # the corruption loop: a half-written/corrupt file is never cached, so a
+      # bad run cannot poison every future run. `if: success()` (not always())
+      # means an aborted/failed run leaves the previous good cache in place.
       - name: Save the job database
-        if: always()
+        if: success()
+        run: |
+          if sqlite3 jobtracker.db "PRAGMA integrity_check;" | grep -q '^ok$'; then
+            echo "SAVE_DB=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Database corrupt at save time; not caching it."
+            echo "SAVE_DB=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Cache the verified database
+        if: success() && env.SAVE_DB == '1'
         uses: actions/cache/save@v4
         with:
           path: jobtracker.db
