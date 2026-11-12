@@ -248,7 +248,7 @@ two YAML files:
   `priority` (`high`/`medium`/`low`), `check_interval_minutes`, `locations`, and
   `notes`. Unsupported ATS types route to a fallback stub (`requires_fallback`).
 
-  The seed list ships **45 companies with connectors verified live** against
+  The seed list ships **43 companies with connectors verified live** against
   their public ATS endpoint (a 200 returning real postings for that employer),
   so only confirmed tokens/tenants are ever committed — nothing is fabricated.
   These span mechanical / hardware / robotics / aerospace / automotive /
@@ -259,11 +259,12 @@ two YAML files:
   Lever boards (Shield AI, Zoox, Dexterity, Bright Machines, and the Canadian
   satellite firms Telesat and Kepler Communications), Ashby boards (1X
   Technologies, Saronic, Gecko Robotics, Physical Intelligence, Standard Bots),
-  a SmartRecruiters board (Aker Solutions), and **Workday** boards (NVIDIA,
+  and **Workday** boards (NVIDIA,
   Stryker, Medtronic, KLA, Magna International, Enbridge, plus the FEAT-002
   additions CAE, TC Energy, Bruce Power, GE Vernova, Boeing, and Rockwell
   Automation — whose board also carries its Canadian subsidiary Clearpath
-  Robotics). The Workday connector talks to the public CXS JSON endpoint
+  Robotics, which is therefore tracked as a pointer stub to that board rather
+  than a second connector, to avoid duplicate ingestion). The Workday connector talks to the public CXS JSON endpoint
   (`{tenant}.{dc}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`), paginates by
   offset, and fetches each posting's full description + canonical public apply
   URL via the per-posting detail call; each tenant/data-center/site triple was

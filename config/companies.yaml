@@ -888,17 +888,13 @@ companies:
 
   - id: clearpath-robotics
     name: Clearpath Robotics (Rockwell Automation)
-    ats: workday
-    tenant: rockwellautomation
-    data_center: wd1
-    site: external_rockwell_automation
+    ats: html
     careers_url: https://rockwellautomation.wd1.myworkdayjobs.com/external_rockwell_automation
     enabled: true
-    priority: high
-    check_interval_minutes: 60
+    priority: low
     locations:
       - Canada
-    notes: Clearpath Robotics careers page redirects to parent Rockwell Automation's Workday board; verified live (rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/external_rockwell_automation/jobs, ~450 postings) which carries Clearpath/Kitchener-Waterloo robotics roles. Canadian robotics/automation.
+    notes: Clearpath Robotics was acquired by Rockwell Automation and its roles are served from Rockwell's global Workday board (see id 'rockwell-automation', verified live); it has no separate public board, so this entry is a pointer stub to avoid duplicate ingestion (the same ~450 postings would otherwise ingest twice under two company ids).
 
   # ======================================================================
   # FEAT-002 expansion: user company list (Canadian engineering / aerospace /
@@ -946,18 +942,16 @@ companies:
     check_interval_minutes: 60
     locations:
       - Canada
-    notes: Verified live Workday board (rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/external_rockwell_automation/jobs, ~450 postings); industrial automation (parent of Clearpath Robotics), includes Canada roles.
+    notes: Verified live Workday board (rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/external_rockwell_automation/jobs, ~450 postings); industrial automation (parent of Clearpath Robotics - its Canadian robotics roles come from this board; see the clearpath-robotics pointer stub), includes Canada roles.
 
   - id: aker-solutions
     name: Aker Solutions
-    ats: smartrecruiters
-    board_token: AkerSolutions
+    ats: html
     careers_url: https://www.akersolutions.com/careers/
     enabled: true
-    priority: medium
-    check_interval_minutes: 360
+    priority: low
     locations: []
-    notes: Verified live SmartRecruiters board (api.smartrecruiters.com/v1/companies/AkerSolutions/postings, totalFound=1 at probe time for the correct employer); energy/engineering. Board is active but currently sparse.
+    notes: SmartRecruiters board (api.smartrecruiters.com/v1/companies/AkerSolutions/postings) exists for the correct employer but returns totalFound=1 and the single posting is a stale 2017 Business Analyst role in Pune, India - no Canadian or mechanical-engineering roles. Kept as an html stub rather than a connector until the board surfaces relevant postings.
 
   # --- User-list employers on Workday/portals whose tenant is NOT discoverable
   #     without JS/scraping (careers HTML loads the board via JavaScript).
@@ -1499,7 +1493,7 @@ companies:
     priority: low
     locations:
       - Canada
-    notes: Canadian energy; careers board loads via JS. A guessed Workday tenant 'cenovus' returned a DIFFERENT employer's postings (US-OH-Columbus), so it was rejected per CORE RULE #1. Public supported ATS not confirmed. Fallback until a connector exists.
+    notes: Canadian energy; careers board loads via JS. A guessed Workday tenant 'cenovus' did not resolve to a confirmed Cenovus board (it returned 404/422 / a non-Cenovus response), so it was rejected per CORE RULE #1 - no tenant is committed on a guess. Public supported ATS not confirmed. Fallback until a connector exists.
 
   - id: teck-resources
     name: Teck Resources
