@@ -95,6 +95,32 @@ def test_free_actor_cap_is_passed_to_call(tmp_path) -> None:
     assert client._actor.last_opts.get("maxTotalChargeUsd") == 0.0
 
 
+def test_unfinished_run_is_skipped_not_hung(tmp_path) -> None:
+    # A run that did not finish within wait_secs (non-SUCCEEDED status) must be
+    # skipped and retried next poll, never block.
+    client = _FakeClient(
+        {"defaultDatasetId": "ds1", "status": "RUNNING", "usageTotalUsd": 0.0},
+        [{"id": "x", "title": "T"}],
+    )
+    conn = ApifyWorkdayConnector(
+        settings=Settings(apify_token="t", apify_max_run_charge_usd=0.0),
+        budget=ApifyBudget(monthly_budget_usd=5.0, ledger_path=tmp_path / "u.json"),
+        client=client,
+    )
+    assert conn.fetch(_company()) == []
+
+
+def test_wait_secs_is_passed_to_call(tmp_path) -> None:
+    client = _FakeClient({"defaultDatasetId": "ds1", "usageTotalUsd": 0.0}, [])
+    conn = ApifyWorkdayConnector(
+        settings=Settings(apify_token="t", apify_run_wait_secs=45),
+        budget=ApifyBudget(monthly_budget_usd=5.0, ledger_path=tmp_path / "u.json"),
+        client=client,
+    )
+    conn.fetch(_company())
+    assert client._actor.last_opts.get("wait_secs") == 45
+
+
 def test_paid_run_blocked_when_budget_exhausted(tmp_path) -> None:
     ledger = tmp_path / "u.json"
     budget = ApifyBudget(monthly_budget_usd=5.0, ledger_path=ledger)
