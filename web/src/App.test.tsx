@@ -36,6 +36,12 @@ function feed(overrides: Partial<Feed> = {}): Feed {
         source_last_checked_at: "2026-01-01T11:50:00+00:00",
         source_last_checked_ago: "10 minutes ago",
         is_new: true,
+        ai_reasoning: {
+          recommendation: "apply",
+          confidence: 0.9,
+          explanation: "Strong mechanical co-op fit for a first-year.",
+          work_authorization_assessment: "Canada-located; eligible.",
+        },
       },
     ],
     ...overrides,
@@ -67,6 +73,17 @@ describe("App", () => {
       "href",
       "https://apply.example/a",
     );
+  });
+
+  it("shows the AI eligibility reasoning control on an AI-assessed card", async () => {
+    mockFetch(feed());
+    render(<App />);
+    expect(
+      await screen.findByText(/AI eligibility reasoning/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Strong mechanical co-op fit for a first-year/i),
+    ).toBeInTheDocument();
   });
 
   it("shows an empty-state when there are no eligible jobs", async () => {

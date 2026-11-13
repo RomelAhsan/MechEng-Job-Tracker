@@ -42,6 +42,57 @@ def _job(session: Session, job_id: str, title: str, *, eligible: bool | None) ->
     )
 
 
+def test_tracked_count_excludes_stub_companies(session: Session) -> None:
+    # Only connector-backed, enabled, active companies count as "tracked".
+    session.add(Company(id="acme", name="Acme", ats="greenhouse", active=True, enabled=True))
+    session.add(Company(id="stub", name="Stub Co", ats="html", active=True, enabled=True))
+    session.add(Company(id="off", name="Off", ats="lever", active=True, enabled=False))
+    session.flush()
+    feed = web_export_service.build_feed(session)
+    # greenhouse counts; html stub and disabled lever do not.
+    assert feed.payload["tracked_company_count"] == 1
+
+
+def test_job_without_ai_analysis_has_null_reasoning(session: Session) -> None:
+    _company(session)
+    _job(session, "keep-1", "Mechanical Engineering Intern", eligible=True)
+    session.flush()
+    job = web_export_service.build_feed(session).payload["jobs"][0]
+    assert job["ai_reasoning"] is None
+
+
+def test_job_with_ai_analysis_exposes_reasoning(session: Session) -> None:
+    from jobtracker.db.models import AiAnalysisCache
+
+    _company(session)
+    _job(session, "keep-1", "Mechanical Engineering Intern", eligible=True)
+    # Cache an AI analysis for the current (job, description_hash, version) key.
+    job = session.get(Job, "keep-1")
+    session.add(
+        AiAnalysisCache(
+            job_id="keep-1",
+            description_hash=job.description_hash,
+            profile_version=1,
+            result={
+                "recommendation": "apply",
+                "relevance_score": 88,
+                "confidence": 0.9,
+                "explanation": "Strong mechanical co-op fit.",
+                "work_authorization_assessment": "Canada-located; eligible.",
+                "concerns": [],
+                "matched_skills": ["CAD"],
+            },
+        )
+    )
+    session.flush()
+    job_dict = web_export_service.build_feed(session).payload["jobs"][0]
+    reasoning = job_dict["ai_reasoning"]
+    assert reasoning is not None
+    assert reasoning["recommendation"] == "apply"
+    assert reasoning["explanation"] == "Strong mechanical co-op fit."
+    assert "CAD" in reasoning["matched_skills"]
+
+
 def test_feed_has_wellformed_shape_when_empty(session: Session) -> None:
     feed = web_export_service.build_feed(session)
     payload = feed.payload

@@ -40,7 +40,39 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _job_to_dict(view: JobView) -> dict[str, object]:
+#: SPEC fields of a cached AI analysis that we surface as "eligibility
+#: reasoning" on an AI-approved card. Kept to the human-readable ones.
+_AI_REASONING_FIELDS = (
+    "recommendation",
+    "relevance_score",
+    "confidence",
+    "explanation",
+    "mechanical_relevance",
+    "term_assessment",
+    "duration_assessment",
+    "location_assessment",
+    "work_authorization_assessment",
+    "matched_skills",
+    "missing_skills",
+    "concerns",
+)
+
+
+def _ai_reasoning(result: dict | None) -> dict | None:
+    """Extract the human-readable AI reasoning from a cached analysis result.
+
+    Returns ``None`` when the job has no cached AI analysis (e.g. not yet
+    screened by AI, or running in the no-key Stage-1 fallback), so the front-end
+    only shows the "AI eligibility reasoning" button on genuinely AI-assessed
+    cards.
+    """
+    if not result:
+        return None
+    reasoning = {k: result[k] for k in _AI_REASONING_FIELDS if k in result}
+    return reasoning or None
+
+
+def _job_to_dict(view: JobView, ai_result: dict | None) -> dict[str, object]:
     """Serialize one eligible job into the flat shape the React app consumes."""
     return {
         "job_id": view.job_id,
@@ -67,6 +99,9 @@ def _job_to_dict(view: JobView) -> dict[str, object]:
         "source_last_checked_at": _iso(view.source_last_checked_at),
         "source_last_checked_ago": view.source_last_checked_ago,
         "is_new": view.is_new,
+        # None unless the job was actually assessed by the AI; drives the
+        # "AI eligibility reasoning" button on the card.
+        "ai_reasoning": _ai_reasoning(ai_result),
     }
 
 
@@ -87,23 +122,43 @@ class WebFeed:
     job_count: int
 
 
+#: ATS types that are honest "stub" placeholders with no working connector --
+#: these employers are NOT actually fetched, so they must not be counted or
+#: advertised as "tracked".
+_STUB_ATS = {"html"}
+
+
 def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
     """Build the static feed payload from the eligible "Relevant For Me" set."""
-    views = dashboard_service.list_relevant_jobs(session, user_id=user_id)
-    jobs = [_job_to_dict(v) for v in views]
+    from jobtracker.services import ai_service
 
-    total_companies = session.scalar(
-        select(Company.id).where(Company.active.is_(True)).limit(1)
+    views = dashboard_service.list_relevant_jobs(session, user_id=user_id)
+
+    jobs: list[dict[str, object]] = []
+    for v in views:
+        cached = ai_service.get_cached(session, v.job_id, user_id=user_id)
+        jobs.append(_job_to_dict(v, cached.result if cached else None))
+
+    # Count only companies we ACTUALLY pull jobs from: active, enabled, and
+    # backed by a real connector (not an `html` stub). The old count included
+    # all 153 rows, which misleadingly advertised employers we cannot fetch.
+    tracked = len(
+        list(
+            session.scalars(
+                select(Company.id).where(
+                    Company.active.is_(True),
+                    Company.enabled.is_(True),
+                    Company.ats.not_in(_STUB_ATS),
+                )
+            )
+        )
     )
-    company_count = len(
-        list(session.scalars(select(Company.id).where(Company.active.is_(True))))
-    ) if total_companies is not None else 0
 
     payload: dict[str, object] = {
         "version": FEED_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "source_last_checked_at": _iso(_latest_source_check(session)),
-        "tracked_company_count": company_count,
+        "tracked_company_count": tracked,
         "job_count": len(jobs),
         "jobs": jobs,
     }

@@ -1,9 +1,58 @@
-import type { Job } from "./types";
+import type { AiReasoning, Job } from "./types";
 
 function duration(job: Job): string {
   if (job.duration_label) return job.duration_label;
   if (job.duration_months) return `${job.duration_months} months`;
   return "duration not specified";
+}
+
+function AiReasoningPanel({ r }: { r: AiReasoning }) {
+  const rows: Array<[string, string | undefined]> = [
+    ["Mechanical fit", r.mechanical_relevance],
+    ["Term", r.term_assessment],
+    ["Duration", r.duration_assessment],
+    ["Location", r.location_assessment],
+    ["Work authorization", r.work_authorization_assessment],
+  ];
+  return (
+    <details className="ai-reasoning">
+      <summary>
+        🤖 AI eligibility reasoning
+        {r.recommendation ? ` — ${r.recommendation}` : ""}
+        {r.confidence != null
+          ? ` (confidence ${Math.round(r.confidence * 100)}%)`
+          : ""}
+      </summary>
+      <div className="ai-body">
+        {r.explanation && <p className="ai-explain">{r.explanation}</p>}
+        <dl className="ai-grid">
+          {rows
+            .filter(([, v]) => v)
+            .map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+        </dl>
+        {r.matched_skills && r.matched_skills.length > 0 && (
+          <p className="ai-skills">
+            <strong>Matched skills:</strong> {r.matched_skills.join(", ")}
+          </p>
+        )}
+        {r.missing_skills && r.missing_skills.length > 0 && (
+          <p className="ai-skills">
+            <strong>Missing skills:</strong> {r.missing_skills.join(", ")}
+          </p>
+        )}
+        {r.concerns && r.concerns.length > 0 && (
+          <p className="ai-concerns">
+            <strong>Concerns:</strong> {r.concerns.join("; ")}
+          </p>
+        )}
+      </div>
+    </details>
+  );
 }
 
 export function JobCard({ job }: { job: Job }) {
@@ -77,6 +126,7 @@ export function JobCard({ job }: { job: Job }) {
             ? ` · board checked ${job.source_last_checked_ago}`
             : ""}
         </p>
+        {job.ai_reasoning && <AiReasoningPanel r={job.ai_reasoning} />}
       </footer>
     </article>
   );
