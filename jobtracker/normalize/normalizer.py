@@ -69,7 +69,12 @@ _CANADA_PROVINCES = {
     "yukon": "YT", "yt": "YT",
     "nunavut": "NU", "nu": "NU",
 }
-_CANADA_TOKENS = {"canada", "ca"}
+# Canada is detected ONLY from the unambiguous full word (or province codes
+# below). "CA" is NOT here: in job postings "CA" is the US state California far
+# more often than Canada (e.g. "Hawthorne, CA" = SpaceX HQ in California).
+# Mislabeling those as Canada previously let US-only (ITAR/citizen-only) roles
+# bypass the eligibility filter, which is exactly the bug the user kept hitting.
+_CANADA_TOKENS = {"canada"}
 
 # A representative set of US state abbreviations + a few full names.
 _US_STATES = {
@@ -129,23 +134,32 @@ def split_location(location: str) -> tuple[str | None, str | None, str | None]:
 
     lowered = [tok.lower() for tok in tokens]
 
-    # Country detection from any token.
-    for raw, low in zip(tokens, lowered, strict=True):
-        if low in _CANADA_TOKENS or raw == "CA":
+    # Country detection from any token. Only the full word "canada" / explicit
+    # US tokens decide the country here; bare two-letter codes are resolved as
+    # provinces/states below (where "CA" correctly maps to California, a US
+    # state, NOT Canada).
+    for low in lowered:
+        if low in _CANADA_TOKENS:
             country = "Canada"
         elif low in _US_TOKENS:
             country = "United States"
 
-    # Province/state detection.
+    # Province/state detection. A two-letter code is ambiguous between a Canada
+    # province and a US state ("CA" is both a (removed) Canada alias and the US
+    # state California). We resolve US states FIRST so "CA"/"ON"-style codes map
+    # to their US-state meaning when they collide, and only treat a code as a
+    # Canadian province when it is NOT also a US state abbreviation. (The only
+    # real collision is "CA"; Canadian province codes like ON/QC/BC/AB are not
+    # US states, so they still resolve to Canada correctly.)
     for raw, low in zip(tokens, lowered, strict=True):
-        if low in _CANADA_PROVINCES:
-            province_state = _CANADA_PROVINCES[low]
-            if country is None:
-                country = "Canada"
-        elif low in _US_STATES and raw.upper() == raw:
+        if low in _US_STATES and raw.upper() == raw:
             province_state = raw.upper()
             if country is None:
                 country = "United States"
+        elif low in _CANADA_PROVINCES:
+            province_state = _CANADA_PROVINCES[low]
+            if country is None:
+                country = "Canada"
 
     # City is the first token that is not a province/state/country marker.
     markers = _CANADA_TOKENS | _US_TOKENS | set(_CANADA_PROVINCES) | _US_STATES
