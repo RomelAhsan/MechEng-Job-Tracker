@@ -69,51 +69,55 @@ def test_itar_fails() -> None:
     assert "itar" in verdict.failed_rules
 
 
-def test_itar_company_us_role_fails_even_without_citizenship_text() -> None:
-    # A SpaceX US role with NO explicit citizenship text must still be excluded
-    # when the company is ITAR-restricted -- this is the SpaceX case.
+def test_itar_company_explicit_us_citizen_role_hard_fails() -> None:
+    # An EXPLICIT US-citizen barrier is still hard-failed deterministically
+    # (via the persisted ITAR status), with or without the company flag.
+    verdict = compute_stage1_eligibility(
+        _job(
+            country="United States",
+            location="Hawthorne, CA",
+            eligibility_status=INELIGIBLE_ITAR,
+        ),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=True,
+    )
+    assert verdict.eligible is False
+    assert "itar" in verdict.failed_rules
+
+
+def test_itar_company_ambiguous_us_role_routed_to_ai_not_hard_failed() -> None:
+    # Refined rule: an ambiguous (no explicit citizenship text) US role at an
+    # ITAR company is NOT hard-excluded here -- it stays eligible for the AI
+    # stage, but is flagged so the AI scrutinises it.
     verdict = compute_stage1_eligibility(
         _job(country="United States", location="Hawthorne, CA"),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=True,
     )
-    assert verdict.eligible is False
-    assert "itar_company" in verdict.failed_rules
+    assert verdict.eligible is True
+    assert verdict.itar_company_ambiguous is True
 
 
-def test_itar_company_unknown_country_role_fails() -> None:
-    verdict = compute_stage1_eligibility(
-        _job(country=None, location="Remote"),
-        PROFILE,
-        _no_degree_exp(),
-        itar_restricted_company=True,
-    )
-    assert verdict.eligible is False
-    assert "itar_company" in verdict.failed_rules
-
-
-def test_itar_company_canada_role_survives() -> None:
-    # Only the Canada-located roles from an ITAR-restricted company pass.
+def test_itar_company_canada_role_not_flagged() -> None:
     verdict = compute_stage1_eligibility(
         _job(country="Canada", location="Toronto, ON, Canada"),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=True,
     )
-    assert "itar_company" not in verdict.failed_rules
+    assert verdict.itar_company_ambiguous is False
 
 
-def test_non_itar_company_us_role_not_failed_by_itar_company_rule() -> None:
-    # A non-ITAR company's US role is not hit by this rule (leniency intact;
-    # the normal sponsorship path still applies).
+def test_non_itar_company_us_role_not_flagged() -> None:
     verdict = compute_stage1_eligibility(
         _job(country="United States", location="Austin, TX"),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=False,
     )
-    assert "itar_company" not in verdict.failed_rules
+    assert verdict.itar_company_ambiguous is False
 
 
 def test_us_citizen_only_fails_citizenship() -> None:

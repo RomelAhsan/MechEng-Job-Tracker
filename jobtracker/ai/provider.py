@@ -176,6 +176,11 @@ class GeminiProvider(AIProvider):
             message = f"Gemini API returned {exc.code}: {str(exc)[:300]}"
             if exc.code == 429:
                 raise _classify_rate_limit(exc, message) from exc
+            # 503/500 are transient server-side ("high demand") -- treat like a
+            # short rate limit so the bulk pass waits and retries rather than
+            # dropping the job.
+            if exc.code in (500, 503):
+                raise AIRateLimitedError(message, retry_after_seconds=15.0) from exc
             raise AIProviderError(message) from exc
         except Exception as exc:  # noqa: BLE001 - network/timeout failures.
             raise AIProviderError(f"Gemini API request failed: {exc}") from exc

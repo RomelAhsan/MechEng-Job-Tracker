@@ -72,6 +72,10 @@ class EligibilityVerdict:
     evidence: list[str] = field(default_factory=list)
     #: Machine-readable ids of every rule that failed (empty when eligible).
     failed_rules: list[str] = field(default_factory=list)
+    #: True when this is a non-Canada role at an ITAR-restricted company that is
+    #: NOT explicitly barred by posting text -- i.e. ambiguous and routed to the
+    #: AI stage for a citizenship-aware decision (not hard-excluded here).
+    itar_company_ambiguous: bool = False
 
 
 def _norm(values: list[str] | None) -> set[str]:
@@ -139,23 +143,21 @@ def compute_stage1_eligibility(
             match.group(0) if match else None,
         )
 
-    # (2c) ITAR-restricted COMPANY policy. US aerospace/defense employers
-    # (SpaceX, Lockheed, Northrop, etc.) require US citizenship by law (ITAR/
-    # EAR) on essentially every role, whether or not the individual posting
-    # spells it out -- so relying on per-posting citizenship text misses most
-    # of them. For a company flagged itar_restricted, ANY role NOT located in
-    # Canada (including unknown-country) is ineligible for the Canadian-citizen
-    # profile; only their Canada-located roles survive. This is the user's
-    # explicit rule and is deterministic (no dependence on posting text/AI).
+    # (2c) ITAR-restricted COMPANY signal (NOT a blunt block). US aerospace/
+    # defense employers (SpaceX, Lockheed, ...) require US citizenship on MOST
+    # but not strictly ALL roles. Per the user's refined rule we do NOT hard-
+    # kill every non-Canada role here -- that would remove genuinely-ambiguous
+    # or genuinely-open ones. Instead:
+    #   * an EXPLICIT citizenship/sponsorship barrier is still hard-failed by
+    #     the (3)/(4) status rules below (deterministic, no AI);
+    #   * an AMBIGUOUS non-Canada role at an ITAR company is LEFT eligible here
+    #     so it flows to the AI stage, but flagged so the AI scrutinises it with
+    #     ITAR-aware instructions and makes the accurate call.
+    # Canada-located roles are unaffected.
     country = (getattr(job, "country", None) or "").strip().lower()
-    if itar_restricted_company and country != "canada":
-        where = getattr(job, "location", None) or "outside Canada"
-        _fail(
-            "itar_company",
-            "US aerospace/defense employer requiring US citizenship (ITAR); "
-            "only Canada-located roles are eligible.",
-            str(where),
-        )
+    verdict.itar_company_ambiguous = bool(
+        itar_restricted_company and country != "canada"
+    )
 
     # (3)/(4) ITAR + citizenship/sponsorship: read the persisted status (never
     # re-derived here). ITAR is a hard barrier; an explicit US-citizen / US-
