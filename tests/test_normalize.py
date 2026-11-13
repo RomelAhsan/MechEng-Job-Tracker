@@ -68,6 +68,28 @@ def test_split_location_us_state():
     assert country == "United States"
 
 
+def test_split_location_ca_is_california_not_canada():
+    # Regression: "CA" in a posting means California (US), not Canada. Tagging
+    # SpaceX's "Hawthorne, CA" as Canada previously let US citizen-only roles
+    # bypass the eligibility filter.
+    for loc in ("Hawthorne, CA", "Vandenberg, CA", "Los Angeles, CA, USA"):
+        _, province, country = split_location(loc)
+        assert province == "CA", loc
+        assert country == "United States", loc
+
+
+def test_split_location_canadian_places_still_canada():
+    for loc, want_prov in (
+        ("Toronto, ON, Canada", "ON"),
+        ("Vancouver, BC", "BC"),
+        ("Montreal, QC", "QC"),
+        ("Calgary, AB", "AB"),
+    ):
+        _, province, country = split_location(loc)
+        assert province == want_prov, loc
+        assert country == "Canada", loc
+
+
 def test_infer_remote_and_employment_defaults_unknown():
     assert infer_remote_status("Engineer", "Great job") == RemoteStatus.UNKNOWN
     assert (
