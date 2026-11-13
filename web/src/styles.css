@@ -111,6 +111,25 @@ body {
 .state-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .state-error .muted { color: #b91c1c; font-size: 0.85rem; }
 
+.ai-reasoning { border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.ai-reasoning summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.ai-reasoning summary::-webkit-details-marker { display: none; }
+.ai-reasoning summary::before { content: "▸ "; }
+.ai-reasoning[open] summary::before { content: "▾ "; }
+.ai-body { margin-top: 0.5rem; font-size: 0.82rem; }
+.ai-explain { margin: 0 0 0.5rem; }
+.ai-grid { display: grid; grid-template-columns: 1fr; gap: 0.3rem; margin: 0 0 0.5rem; }
+.ai-grid dt { font-size: 0.66rem; text-transform: uppercase; color: var(--muted); }
+.ai-grid dd { margin: 0 0 0.25rem; }
+.ai-skills, .ai-concerns { margin: 0.2rem 0; }
+.ai-concerns { color: var(--warn); }
+
 .sitefoot { margin: 1.5rem 0 0.5rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 480px) {

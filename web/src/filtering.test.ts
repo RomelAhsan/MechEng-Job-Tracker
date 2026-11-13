@@ -27,6 +27,7 @@ function job(partial: Partial<Job> & { job_id: string }): Job {
     source_last_checked_at: null,
     source_last_checked_ago: null,
     is_new: false,
+    ai_reasoning: null,
     ...partial,
   };
 }
@@ -57,8 +58,22 @@ describe("applyFilters", () => {
     ]);
   });
 
-  it("filters to new-only", () => {
-    expect(applyFilters(jobs, { ...DEFAULT_FILTERS, onlyNew: true }).map((j) => j.job_id)).toEqual(["a"]);
+  it("filters by freshness window (hours since first seen)", () => {
+    const now = Date.now();
+    const recent = new Date(now - 3 * 3600_000).toISOString(); // 3h ago
+    const old = new Date(now - 100 * 3600_000).toISOString(); // ~4 days ago
+    const fresh = [
+      job({ job_id: "r", first_seen_at: recent }),
+      job({ job_id: "o", first_seen_at: old }),
+    ];
+    // Past 12 hours keeps only the 3h-old one.
+    expect(
+      applyFilters(fresh, { ...DEFAULT_FILTERS, freshnessHours: 12 }).map((j) => j.job_id),
+    ).toEqual(["r"]);
+    // Any time keeps both.
+    expect(
+      applyFilters(fresh, { ...DEFAULT_FILTERS, freshnessHours: 0 }).length,
+    ).toBe(2);
   });
 
   it("sorts by fit score descending by default", () => {

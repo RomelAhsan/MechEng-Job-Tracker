@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadFeed } from "./api";
-import {
-  applyFilters,
-  companyOptions,
-  remoteOptions,
-  termOptions,
-} from "./filtering";
+import { applyFilters, companyOptions, remoteOptions } from "./filtering";
 import { JobCard } from "./JobCard";
-import { DEFAULT_FILTERS, type Feed, type Filters } from "./types";
+import {
+  DEFAULT_FILTERS,
+  FRESHNESS_OPTIONS,
+  TERM_OPTIONS,
+  type Feed,
+  type Filters,
+  type FreshnessHours,
+} from "./types";
+
+const TERM_LABELS: Record<string, string> = {
+  spring: "Spring (May–Aug)",
+  summer: "Summer",
+  winter: "Winter (Jan–Apr)",
+};
 
 function formatStamp(iso: string | null): string {
   if (!iso) return "unknown";
@@ -95,9 +103,9 @@ export function App() {
               aria-label="Term"
             >
               <option value="">Any term</option>
-              {termOptions(jobs).map((t) => (
+              {TERM_OPTIONS.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {TERM_LABELS[t] ?? t}
                 </option>
               ))}
             </select>
@@ -123,14 +131,19 @@ export function App() {
                 onChange={(e) => set("minFit", Number(e.target.value))}
               />
             </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={filters.onlyNew}
-                onChange={(e) => set("onlyNew", e.target.checked)}
-              />
-              New only
-            </label>
+            <select
+              value={filters.freshnessHours}
+              onChange={(e) =>
+                set("freshnessHours", Number(e.target.value) as FreshnessHours)
+              }
+              aria-label="Posted within"
+            >
+              {FRESHNESS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
             <select
               value={filters.sort}
               onChange={(e) => set("sort", e.target.value as Filters["sort"])}

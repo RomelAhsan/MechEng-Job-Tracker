@@ -26,6 +26,23 @@ export interface Job {
   source_last_checked_at: string | null;
   source_last_checked_ago: string | null;
   is_new: boolean;
+  ai_reasoning: AiReasoning | null;
+}
+
+// Human-readable AI assessment, present only on cards the AI actually judged.
+export interface AiReasoning {
+  recommendation?: string;
+  relevance_score?: number;
+  confidence?: number;
+  explanation?: string;
+  mechanical_relevance?: string;
+  term_assessment?: string;
+  duration_assessment?: string;
+  location_assessment?: string;
+  work_authorization_assessment?: string;
+  matched_skills?: string[];
+  missing_skills?: string[];
+  concerns?: string[];
 }
 
 export interface Feed {
@@ -39,13 +56,35 @@ export interface Feed {
 
 export type SortKey = "fit" | "newest";
 
+// Freshness window in HOURS (0 = any time). Drives the "Posted within" dropdown.
+export type FreshnessHours = 0 | 12 | 24 | 72 | 168 | 720;
+
+export interface FreshnessOption {
+  value: FreshnessHours;
+  label: string;
+}
+
+export const FRESHNESS_OPTIONS: FreshnessOption[] = [
+  { value: 0, label: "Any time" },
+  { value: 12, label: "Past 12 hours" },
+  { value: 24, label: "Past 24 hours" },
+  { value: 72, label: "Past 3 days" },
+  { value: 168, label: "Past week" },
+  { value: 720, label: "Past 30 days" },
+];
+
+// The three co-op terms the student can work (SPEC supported terms). Shown in
+// the term dropdown regardless of which happen to be present in the feed, so
+// the user always sees all three choices.
+export const TERM_OPTIONS = ["spring", "summer", "winter"] as const;
+
 export interface Filters {
   search: string; // matches title, company, or location
   company: string; // "" = any
   remote: string; // "" = any
   term: string; // "" = any
   minFit: number; // 0-100
-  onlyNew: boolean;
+  freshnessHours: FreshnessHours; // 0 = any
   sort: SortKey;
 }
 
@@ -55,6 +94,6 @@ export const DEFAULT_FILTERS: Filters = {
   remote: "",
   term: "",
   minFit: 0,
-  onlyNew: false,
+  freshnessHours: 0,
   sort: "fit",
 };
