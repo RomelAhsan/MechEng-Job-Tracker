@@ -1,5 +1,36 @@
 import type { AiReasoning, Job } from "./types";
 
+const REPO = "RomelAhsan/MechEng-Job-Tracker";
+
+// Build a pre-filled GitHub issue so one click captures structured feedback
+// (the static site has no server to POST to). The maintainer / AI uses these
+// 'job-feedback' issues to tighten the filters so similar postings stop
+// slipping through -- closing the loop the user asked for.
+function reportWrongUrl(job: Job): string {
+  const title = `Wrong match: ${job.title} @ ${job.company}`;
+  const body = [
+    "This posting should NOT have been shown as eligible.",
+    "",
+    "**Why it's wrong (please edit this line):** ",
+    "",
+    "---",
+    "_Auto-filled job details:_",
+    `- Job: ${job.title}`,
+    `- Company: ${job.company}`,
+    `- Location: ${job.location} (${job.country ?? "country unknown"})`,
+    `- Employment type: ${job.employment_type}`,
+    `- Term: ${job.term_season} · Duration: ${job.duration_label || "unspecified"}`,
+    `- Apply: ${job.application_url ?? "—"}`,
+    `- Source: ${job.source_url ?? "—"}`,
+    `- job_id: ${job.job_id}`,
+  ].join("\n");
+  return (
+    `https://github.com/${REPO}/issues/new` +
+    `?labels=job-feedback&title=${encodeURIComponent(title)}` +
+    `&body=${encodeURIComponent(body)}`
+  );
+}
+
 function duration(job: Job): string {
   if (job.duration_label) return job.duration_label;
   if (job.duration_months) return `${job.duration_months} months`;
@@ -127,6 +158,15 @@ export function JobCard({ job }: { job: Job }) {
             : ""}
         </p>
         {job.ai_reasoning && <AiReasoningPanel r={job.ai_reasoning} />}
+        <a
+          className="report-wrong"
+          href={reportWrongUrl(job)}
+          target="_blank"
+          rel="noreferrer"
+          title="Tell the maintainer this job shouldn't be here and why; it improves the filters."
+        >
+          ⚑ Report wrong match
+        </a>
       </footer>
     </article>
   );
