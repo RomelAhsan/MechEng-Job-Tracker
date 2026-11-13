@@ -86,6 +86,11 @@ def test_seed_companies_supported_ats_have_tokens():
             has_url = bool(c.careers_url and "myworkdayjobs.com" in c.careers_url)
             if not (has_triple or has_url):
                 missing.append(c.id)
+        elif c.ats == "apify_workday":
+            # Apify fetches by careers_url (the Actor discovers the tenant), so
+            # these have no board_token -- a careers_url is the identifier.
+            if not (c.careers_url and c.careers_url.strip()):
+                missing.append(c.id)
         elif not (c.board_token and c.board_token.strip()):
             missing.append(c.id)
     assert missing == [], f"supported-ATS companies missing an identifier: {missing}"

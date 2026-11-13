@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from jobtracker.connectors.apify_workday import ApifyWorkdayConnector
 from jobtracker.connectors.ashby import AshbyConnector
 from jobtracker.connectors.base import Connector
 from jobtracker.connectors.fallback import FallbackConnector
@@ -29,6 +30,7 @@ _SUPPORTED: dict[str, type[Connector]] = {
     ATSType.RSS.value: RssConnector,
     ATSType.SITEMAP.value: SitemapConnector,
     ATSType.JSON_LD.value: JsonLdConnector,
+    ATSType.APIFY_WORKDAY.value: ApifyWorkdayConnector,
 }
 
 

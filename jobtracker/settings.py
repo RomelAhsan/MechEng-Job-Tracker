@@ -89,6 +89,23 @@ class Settings(BaseSettings):
     #: well within the token budget with truncated per-job descriptions.
     ai_batch_size: int = 12
 
+    # Apify (optional third-party fetcher for JS-locked Workday/ATS boards).
+    # KEY-READY: with no token the Apify path is simply skipped (those companies
+    # stay as stubs); nothing breaks. Read from APIFY_TOKEN. The user's account
+    # is free-tier only and must NEVER be billed, so usage is HARD-CAPPED per
+    # day (see below) and only FREE Actors are used by default.
+    apify_token: str | None = None
+    #: Apify Actor used to fetch a Workday board (username~actor-name form).
+    #: Defaults to a FREE Actor so the free-tier/no-pay constraint holds.
+    apify_workday_actor: str = "gooyer.co~myworkdayjobs"
+    #: The free plan renews this many USD of usage credit each month. Used to
+    #: derive the per-day cap (monthly budget / days-in-month).
+    apify_monthly_budget_usd: float = 5.0
+    #: Hard safety cap on what a SINGLE Actor run may be charged. Belt-and-
+    #: suspenders with the free-Actor default so a paid run can never surprise-
+    #: bill the user. 0.0 = never allow a charge (free Actors only).
+    apify_max_run_charge_usd: float = 0.0
+
     # HTTP / connectors
     http_timeout: float = 30.0
     http_max_retries: int = 3
