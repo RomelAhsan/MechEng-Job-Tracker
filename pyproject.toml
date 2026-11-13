@@ -30,6 +30,7 @@ dependencies = [
     "reportlab",
     "markdown",
     "google-genai>=1.0",
+    "apify-client>=1.0",
 ]
 
 [project.optional-dependencies]

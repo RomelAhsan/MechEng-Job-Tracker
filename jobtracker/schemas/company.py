@@ -24,6 +24,9 @@ class ATSType(StrEnum):
     RSS = "rss"
     SITEMAP = "sitemap"
     JSON_LD = "json_ld"
+    #: Workday board fetched via a free Apify Actor (for JS-locked sites whose
+    #: tenant the direct connector cannot discover). Requires APIFY_TOKEN.
+    APIFY_WORKDAY = "apify_workday"
     HTML = "html"
 
 

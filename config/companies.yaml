@@ -714,13 +714,14 @@ companies:
     Canadian nuclear energy.
 - id: ontario-power-generation
   name: Ontario Power Generation (OPG)
-  ats: html
+  ats: apify_workday
   careers_url: https://jobs.opg.com
   enabled: true
   priority: low
   locations:
   - Canada
-  notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
+  notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists. | Routed to Apify Workday
+    Actor (free tier) to fetch the JS-locked board.
 - id: tc-energy
   name: TC Energy
   ats: workday
@@ -769,24 +770,26 @@ companies:
   notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
 - id: linamar
   name: Linamar Corporation
-  ats: html
+  ats: apify_workday
   careers_url: https://www.linamar.com/careers/
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian automotive/manufacturing; SmartRecruiters 'Linamar' returned totalFound=0 (false positive); careers board
-    loads via JS, tenant not discoverable without scraping. Fallback until a connector exists.
+    loads via JS, tenant not discoverable without scraping. Fallback until a connector exists. | Routed to Apify Workday Actor
+    (free tier) to fetch the JS-locked board.
 - id: bombardier
   name: Bombardier
-  ats: html
+  ats: apify_workday
   careers_url: https://careers.bombardier.com
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian aerospace; SmartRecruiters 'Bombardier' returned totalFound=0 (false positive); careers board loads via
-    JS, tenant not discoverable without scraping. Fallback until a connector exists.
+    JS, tenant not discoverable without scraping. Fallback until a connector exists. | Routed to Apify Workday Actor (free
+    tier) to fetch the JS-locked board.
 - id: cae
   name: CAE Inc.
   ats: workday
@@ -871,54 +874,56 @@ companies:
     mechanical-engineering roles. Kept as an html stub rather than a connector until the board surfaces relevant postings.
 - id: atkinsrealis
   name: AtkinsRealis
-  ats: html
+  ats: apify_workday
   careers_url: https://careers.atkinsrealis.com/en
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian engineering; careers board loads via JS, Workday/portal tenant not discoverable without scraping. Fallback
-    until a connector exists.
+    until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: wsp
   name: WSP
-  ats: html
+  ats: apify_workday
   careers_url: https://www.wsp.com/en-gl/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian engineering; careers page returns 403 to non-browser clients and loads via JS, public ATS tenant not discoverable
-    without scraping. SmartRecruiters 'WSP' returned totalFound=0 (false positive). Fallback until a connector exists.
+    without scraping. SmartRecruiters 'WSP' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed
+    to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: stantec
   name: Stantec
-  ats: html
+  ats: apify_workday
   careers_url: https://www.stantec.com/en/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping.
-    SmartRecruiters 'Stantec' returned totalFound=0 (false positive). Fallback until a connector exists.
+    SmartRecruiters 'Stantec' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify
+    Workday Actor (free tier) to fetch the JS-locked board.
 - id: hatch
   name: Hatch
-  ats: html
+  ats: apify_workday
   careers_url: https://www.hatch.com/Careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
-    a connector exists.
+    a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: aecom-canada
   name: AECOM Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://aecom.com/careers/
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector
-    exists.
+    exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: bba
   name: BBA Inc.
   ats: html
@@ -948,24 +953,24 @@ companies:
   notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
 - id: tetra-tech-canada
   name: Tetra Tech Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://www.tetratech.com/careers/
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping. Fallback
-    until a connector exists.
+    until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: ghd
   name: GHD
-  ats: html
+  ats: apify_workday
   careers_url: https://www.ghd.com/en/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
-    exists.
+    exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: mott-macdonald-canada
   name: Mott MacDonald Canada
   ats: html
@@ -987,34 +992,35 @@ companies:
   notes: Engineering; public supported ATS not confirmed. Fallback until a connector exists.
 - id: jacobs
   name: Jacobs
-  ats: html
+  ats: apify_workday
   careers_url: https://careers.jacobs.com
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. SmartRecruiters 'Jacobs'
-    returned totalFound=0 (false positive). Fallback until a connector exists.
+    returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify Workday Actor (free tier)
+    to fetch the JS-locked board.
 - id: fluor-canada
   name: Fluor Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://fluor.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector
-    exists.
+    exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: worley
   name: Worley
-  ats: html
+  ats: apify_workday
   careers_url: https://www.worley.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Engineering/energy; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until
-    a connector exists.
+    a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: wood
   name: Wood
   ats: html
@@ -1144,14 +1150,15 @@ companies:
   itar_restricted: true
 - id: honeywell-aerospace
   name: Honeywell Aerospace
-  ats: html
+  ats: apify_workday
   careers_url: https://careers.honeywell.com
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Aerospace; Honeywell uses an Oracle HCM careers portal (careers.honeywell.com/en/sites/Honeywell), not a supported
-    public ATS. SmartRecruiters 'Honeywell' returned totalFound=0 (false positive). Fallback until a connector exists.
+    public ATS. SmartRecruiters 'Honeywell' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed
+    to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: l3harris-technologies
   name: L3Harris Technologies
   ats: html
@@ -1311,14 +1318,15 @@ companies:
   notes: Canadian aerospace tech; public supported ATS not confirmed (lever token not found). Fallback until a connector exists.
 - id: celestica
   name: Celestica
-  ats: html
+  ats: apify_workday
   careers_url: https://www.celestica.com/careers/working-at-celestica
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian electronics manufacturing; careers board loads via JS, public ATS tenant not discoverable without scraping.
-    SmartRecruiters 'Celestica' returned totalFound=0 (false positive). Fallback until a connector exists.
+    SmartRecruiters 'Celestica' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify
+    Workday Actor (free tier) to fetch the JS-locked board.
 - id: martinrea
   name: Martinrea International
   ats: html
@@ -1331,14 +1339,14 @@ companies:
     Fallback until a connector exists.
 - id: ats-corporation
   name: ATS Corporation
-  ats: html
+  ats: apify_workday
   careers_url: https://atsautomation.com
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian automation (ATS Automation); careers board loads via JS, public ATS tenant not discoverable without scraping.
-    Fallback until a connector exists.
+    Fallback until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: bwxt-canada
   name: BWX Technologies (BWXT Canada)
   ats: html
@@ -1351,13 +1359,14 @@ companies:
     ATS not confirmed. Fallback until a connector exists.
 - id: hydro-quebec
   name: Hydro-Quebec
-  ats: html
+  ats: apify_workday
   careers_url: https://www.hydroquebec.com/careers/
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian utility; careers site uses SuccessFactors (not a supported connector). Fallback until a connector exists.
+    | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: bc-hydro
   name: BC Hydro
   ats: html
@@ -1380,94 +1389,97 @@ companies:
     a connector exists.
 - id: cenovus-energy
   name: Cenovus Energy
-  ats: html
+  ats: apify_workday
   careers_url: https://www.cenovus.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian energy; careers board loads via JS. A guessed Workday tenant 'cenovus' did not resolve to a confirmed Cenovus
-    board (it returned 404/422 / a non-Cenovus response), so it was rejected per CORE RULE
+    board (it returned 404/422 / a non-Cenovus response), so it was rejected per CORE RULE | Routed to Apify Workday Actor
+    (free tier) to fetch the JS-locked board.
 - id: teck-resources
   name: Teck Resources
-  ats: html
+  ats: apify_workday
   careers_url: https://www.teck.com/careers/
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian mining; careers site uses SAP SuccessFactors (career4.successfactors.com?company=Teck), not a supported
-    connector. Fallback until a connector exists.
+    connector. Fallback until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: cameco
   name: Cameco
-  ats: html
+  ats: apify_workday
   careers_url: https://www.cameco.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian uranium/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback
-    until a connector exists.
+    until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: nutrien
   name: Nutrien
-  ats: html
+  ats: apify_workday
   careers_url: https://www.nutrien.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Canadian agriculture/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback
-    until a connector exists.
+    until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: rio-tinto
   name: Rio Tinto
-  ats: html
+  ats: apify_workday
   careers_url: https://www.riotinto.com/en/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
-    exists.
+    exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: vale-canada
   name: Vale Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://vale.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
-    exists.
+    exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: siemens-canada
   name: Siemens Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://jobs.siemens.com/en_US/externaljobs
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Industrial/automation; Siemens runs its own careers portal (jobs.siemens.com), not a supported public ATS. SmartRecruiters
-    'Siemens' returned totalFound=0 (false positive). Fallback until a connector exists.
+    'Siemens' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify Workday Actor (free
+    tier) to fetch the JS-locked board.
 - id: abb-canada
   name: ABB Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://careers.abb/global/en/home
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Industrial/automation; ABB runs its own careers portal, not a supported public ATS. SmartRecruiters 'ABB' returned
-    totalFound=0 (false positive). Fallback until a connector exists.
+    totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch
+    the JS-locked board.
 - id: schneider-electric-canada
   name: Schneider Electric Canada
-  ats: html
+  ats: apify_workday
   careers_url: https://www.se.com/ca/en/about-us/careers/overview.jsp
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Industrial/electrical; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed.
-    Fallback until a connector exists.
+    Fallback until a connector exists. | Routed to Apify Workday Actor (free tier) to fetch the JS-locked board.
 - id: general-electric-canada
   name: General Electric Canada
   ats: html
@@ -1480,24 +1492,26 @@ companies:
     Fallback until a connector exists.
 - id: emerson
   name: Emerson
-  ats: html
+  ats: apify_workday
   careers_url: https://www.emerson.com/en/corporate/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Industrial/automation; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters
-    'Emerson' returned totalFound=0 (false positive). Fallback until a connector exists.
+    'Emerson' returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify Workday Actor (free
+    tier) to fetch the JS-locked board.
 - id: hitachi-energy
   name: Hitachi Energy
-  ats: html
+  ats: apify_workday
   careers_url: https://www.hitachienergy.com/careers
   enabled: true
   priority: low
   locations:
   - Canada
   notes: Energy/power; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'HitachiEnergy'
-    returned totalFound=0 (false positive). Fallback until a connector exists.
+    returned totalFound=0 (false positive). Fallback until a connector exists. | Routed to Apify Workday Actor (free tier)
+    to fetch the JS-locked board.
 - id: kinova-robotics
   name: Kinova Robotics
   ats: html
