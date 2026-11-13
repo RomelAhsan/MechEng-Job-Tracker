@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     #: suspenders with the free-Actor default so a paid run can never surprise-
     #: bill the user. 0.0 = never allow a charge (free Actors only).
     apify_max_run_charge_usd: float = 0.0
+    #: Max seconds to BLOCK waiting for a single Apify Actor run before moving
+    #: on (the run is retried next poll). Keeps the poll step from stalling on
+    #: slow third-party fetches. Kept well under the per-poll budget.
+    apify_run_wait_secs: int = 60
+    #: Max number of apify_workday companies polled PER run, so a backlog of
+    #: slow third-party fetches is spread across polls instead of stalling one.
+    apify_max_companies_per_run: int = 8
 
     # HTTP / connectors
     http_timeout: float = 30.0

@@ -27,8 +27,42 @@ from jobtracker.normalize.normalizer import QuarantineError, normalize
 from jobtracker.schemas.company import CompanyConfig
 from jobtracker.schemas.job import CanonicalJob
 from jobtracker.services import screening_service
+from jobtracker.settings import get_settings
 
 logger = logging.getLogger("jobtracker.services.ingest")
+
+_APIFY_ATS = "apify_workday"
+
+
+def _cap_apify_companies(session: Session, companies: list) -> list:
+    """Keep all fast (direct-API) companies; cap + rotate the slow Apify ones.
+
+    Apify fetches run on a third party and block per run, so polling all of them
+    every run would stall the poll. We poll at most
+    ``apify_max_companies_per_run`` of them, choosing the least-recently-checked
+    (oldest / never-checked ``SourceHealth.last_checked_at`` first) so every
+    Apify company is still covered over successive polls.
+    """
+    settings = get_settings()
+    cap = max(0, int(settings.apify_max_companies_per_run))
+    apify = [c for c in companies if getattr(c, "ats", None) == _APIFY_ATS]
+    others = [c for c in companies if getattr(c, "ats", None) != _APIFY_ATS]
+    if len(apify) <= cap:
+        return companies
+
+    health = {
+        cid: last
+        for cid, last in session.query(
+            SourceHealth.company_id, SourceHealth.last_checked_at
+        ).all()
+    }
+
+    def _never_first(c):  # oldest / never-checked first
+        last = health.get(c.id)
+        return (last is not None, last)
+
+    apify.sort(key=_never_first)
+    return others + apify[:cap]
 
 
 def _now() -> datetime:
@@ -182,6 +216,12 @@ def run(
     if company_ids is not None:
         wanted = set(company_ids)
         companies = [c for c in companies if c.id in wanted]
+    else:
+        # Apify-backed (third-party, slow) companies are capped PER RUN and
+        # rotated by least-recently-checked, so a backlog of slow fetches is
+        # spread across polls instead of stalling one run. Direct-API companies
+        # (greenhouse/lever/...) are fast and always run.
+        companies = _cap_apify_companies(session, companies)
 
     summary = RunSummary()
     for company in companies:

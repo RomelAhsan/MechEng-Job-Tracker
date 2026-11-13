@@ -106,8 +106,15 @@ class ApifyWorkdayConnector(Connector):
 
         actor_id = self._settings.apify_workday_actor.replace("~", "/")
         run_input = {"startUrls": [{"url": careers_url}], "maxItems": 1000}
-        # Cap the bill at the Actor call (0.0 => free Actors only).
-        call_options = {"maxTotalChargeUsd": max_charge}
+        # Cap the bill (0.0 => free Actors only) AND bound how long we BLOCK on a
+        # single Actor run. Without wait_secs the client blocks until the run
+        # finishes, so 28 serial Workday fetches hung the whole poll step past an
+        # hour. We wait a bounded time; if the run is not done we move on (it is
+        # retried next poll) rather than stalling every other company.
+        call_options = {
+            "maxTotalChargeUsd": max_charge,
+            "wait_secs": int(self._settings.apify_run_wait_secs),
+        }
 
         try:
             run = client.actor(actor_id).call(  # type: ignore[attr-defined]
@@ -115,6 +122,14 @@ class ApifyWorkdayConnector(Connector):
             )
         except Exception as exc:  # noqa: BLE001 - one board failing is fail-soft.
             logger.warning("Apify run failed for %s: %s", company.id, exc)
+            return []
+        # A run that did not finish within wait_secs is skipped this poll.
+        if not run or (run.get("status") not in (None, "SUCCEEDED")):
+            logger.info(
+                "Apify run for %s not finished (status=%s); will retry next poll.",
+                company.id,
+                (run or {}).get("status"),
+            )
             return []
 
         # Record actual usage (for a free Actor this is 0.0).
