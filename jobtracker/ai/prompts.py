@@ -113,6 +113,41 @@ def build_profile_summary(profile: dict) -> str:
     return "\n".join(lines) or "- (no profile details provided)"
 
 
+#: The hard eligibility rules the model MUST apply. These make the AI verdict
+#: rule-governed and trustworthy (not a vague "fit" impression): the student is
+#: a FIRST-YEAR CANADIAN CITIZEN seeking a 4-month Spring co-op/internship, and
+#: the rules below define exactly when to answer "skip". The deterministic
+#: Stage-1 filter already removed the clear-cut cases; the model's job is the
+#: AMBIGUOUS ones, and it must resolve ambiguity conservatively.
+ELIGIBILITY_RULES = (
+    "=== ELIGIBILITY RULES (apply strictly; set recommendation=\"skip\" if ANY "
+    "fail) ===\n"
+    "The student is a FIRST-YEAR undergraduate and a CANADIAN CITIZEN (no US "
+    "citizenship, no US work authorization, no completed degree).\n"
+    "1. CITIZENSHIP / ITAR: If the role is in the United States (or its country "
+    "is unknown) AND the employer is in aerospace, defense, space, satellites, "
+    "weapons, or any ITAR/EAR/export-controlled field, assume it requires US "
+    "citizenship or a security clearance unless the posting EXPLICITLY offers "
+    "visa sponsorship or explicitly welcomes non-US persons. Such roles are NOT "
+    "eligible -> skip. A role physically located in CANADA is fine on this "
+    "axis.\n"
+    "2. US (non-defense) roles are eligible ONLY if sponsorship is explicitly "
+    "available or the posting welcomes international/Canadian applicants; if a "
+    "US role is silent on sponsorship, lean skip (a first-year Canadian rarely "
+    "gets US sponsorship).\n"
+    "3. LEVEL: skip if the role requires a completed degree, a Master's/PhD, "
+    "'new grad'/'graduate' status, seniority (senior/staff/principal/lead), or "
+    "multiple years of professional experience. Co-op/internship/student roles "
+    "open to any year are eligible.\n"
+    "4. FIELD: eligible only if mechanical / mechatronics / robotics / "
+    "manufacturing / hardware / aerospace-mechanical / automotive / thermal / "
+    "product-design engineering. Skip pure software/EE/finance/HR/sales roles.\n"
+    "5. When genuinely ambiguous after the above, prefer 'maybe' over a "
+    "confident wrong answer, and explain the uncertainty. NEVER guess facts not "
+    "in the posting. Accuracy matters more than inclusion.\n"
+)
+
+
 def build_analysis_prompt(profile: dict, job: JobPromptInput) -> str:
     """Build the strict-JSON analysis prompt for one job.
 
@@ -138,6 +173,7 @@ def build_analysis_prompt(profile: dict, job: JobPromptInput) -> str:
         "Rules: never invent requirements; base evidence on the provided text; "
         "if something is unknown say so in the relevant assessment and lower the "
         "confidence; recommendation must be one of apply, maybe, or skip.\n\n"
+        f"{ELIGIBILITY_RULES}\n"
         "=== STUDENT PROFILE ===\n"
         f"{build_profile_summary(profile)}\n\n"
         "=== JOB ===\n"
@@ -219,6 +255,7 @@ def build_batch_analysis_prompt(
         "invent requirements; base evidence on the provided text; if something "
         "is unknown say so and lower the confidence; recommendation must be one "
         "of apply, maybe, or skip.\n\n"
+        f"{ELIGIBILITY_RULES}\n"
         "=== STUDENT PROFILE ===\n"
         f"{build_profile_summary(profile)}\n\n"
         "=== JOBS ===\n"
