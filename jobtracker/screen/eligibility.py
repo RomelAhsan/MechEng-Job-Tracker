@@ -52,6 +52,20 @@ _STUDENT_SIGNAL_RE = re.compile(
 # otherwise sit in UNKNOWN and lean entirely on the quota-limited AI stage.
 # Deliberately NARROW: it needs a definite professional-role noun; a vague or
 # genuinely ambiguous title has no match and still passes to AI.
+# The narrow, explicit exception that lets a US role at an ITAR-restricted
+# company survive: the posting clearly offers visa sponsorship or welcomes
+# non-US / international / Canadian applicants. Absent this, an ITAR-company US
+# role is hard-excluded.
+_EXPLICIT_OPEN_RE = re.compile(
+    r"visa\s+sponsorship\s+(?:is\s+)?(?:available|offered|provided)"
+    r"|will\s+sponsor"
+    r"|sponsorship\s+available"
+    r"|open\s+to\s+(?:international|non[-\s]?u\.?s\.?|canadian)"
+    r"|international\s+(?:applicants|candidates)\s+welcome"
+    r"|no\s+citizenship\s+requirement",
+    re.IGNORECASE,
+)
+
 _PROFESSIONAL_TITLE_RE = re.compile(
     r"\b(?:"
     r"manager|director|head\s+of|vice\s+president|vp|chief|"
@@ -143,20 +157,31 @@ def compute_stage1_eligibility(
             match.group(0) if match else None,
         )
 
-    # (2c) ITAR-restricted COMPANY signal (NOT a blunt block). US aerospace/
-    # defense employers (SpaceX, Lockheed, ...) require US citizenship on MOST
-    # but not strictly ALL roles. Per the user's refined rule we do NOT hard-
-    # kill every non-Canada role here -- that would remove genuinely-ambiguous
-    # or genuinely-open ones. Instead:
-    #   * an EXPLICIT citizenship/sponsorship barrier is still hard-failed by
-    #     the (3)/(4) status rules below (deterministic, no AI);
-    #   * an AMBIGUOUS non-Canada role at an ITAR company is LEFT eligible here
-    #     so it flows to the AI stage, but flagged so the AI scrutinises it with
-    #     ITAR-aware instructions and makes the accurate call.
-    # Canada-located roles are unaffected.
+    # (2c) ITAR-restricted COMPANY policy. US aerospace/defense employers
+    # (SpaceX, Lockheed, Northrop, ...) require US citizenship (ITAR/EAR) on
+    # essentially every US-located role. The earlier "route the ambiguous ones
+    # to AI" approach let hundreds of plainly-ineligible US SpaceX roles linger
+    # until the quota-limited AI reached them -- the user is categorically
+    # ineligible for all of them, so we HARD-EXCLUDE a non-Canada role at an
+    # ITAR company at Stage 1. The ONE honest exception: a posting that
+    # EXPLICITLY offers visa sponsorship or welcomes non-US persons survives
+    # (rare), so a genuinely-open role is not wrongly hidden. Canada-located
+    # roles are always unaffected.
     country = (getattr(job, "country", None) or "").strip().lower()
+    _title = getattr(job, "title", None) or ""
+    _desc = getattr(job, "description", None) or ""
+    explicitly_open = _EXPLICIT_OPEN_RE.search(f"{_title}\n{_desc}") is not None
+    if itar_restricted_company and country != "canada" and not explicitly_open:
+        where = getattr(job, "location", None) or "outside Canada"
+        _fail(
+            "itar_company",
+            "US aerospace/defense employer requiring US citizenship (ITAR/EAR); "
+            "only Canada-located roles are eligible.",
+            str(where),
+        )
+    # Still flag the (now rare) survivors so the AI double-checks them.
     verdict.itar_company_ambiguous = bool(
-        itar_restricted_company and country != "canada"
+        itar_restricted_company and country != "canada" and explicitly_open
     )
 
     # (3)/(4) ITAR + citizenship/sponsorship: read the persisted status (never
