@@ -42,6 +42,9 @@ class Company(Base):
     check_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     locations: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: US aerospace/defense employer whose roles require US citizenship (ITAR).
+    #: When True, non-Canada-located roles are marked ineligible at screen time.
+    itar_restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

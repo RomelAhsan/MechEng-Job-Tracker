@@ -1,1630 +1,1520 @@
-# Full target company list (design §16.3), task 20b.
-#
-# For each company the ATS type + board_token was DETECTED/VERIFIED against the
-# real careers URL via detect_ats + the public ATS endpoint. Only boards that
-# were confirmed live (a public JSON board returning real postings for the
-# correct company) carry a connector type + verified token. Companies whose
-# public ATS could not be confirmed are routed to the fallback stub with
-# `ats: html` and `enabled: true` so they appear in Source Health as needing a
-# connector in a later phase; NO board tokens are fabricated for them.
-#
-# Supported connectors: greenhouse, lever, ashby, smartrecruiters, workday,
-# workable, rss, sitemap, json_ld. Workday entries carry a verified
-# tenant/data_center/site triple (the public CXS endpoint
-# {tenant}.{data_center}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs was
-# probed live and returned real postings). Auth-walled Workday boards (e.g.
-# Rivian returns HTTP 401) MUST stay `ats: html` stubs — we never bypass auth.
-#
-# Priority heuristic (design §16.3): Canadian employers + strong mechanical /
-# robotics / automotive / aerospace firms -> high; most others -> medium; any
-# routed to the fallback stub -> low until a connector exists. The user can edit.
 companies:
-  # --- Verified public ATS boards (connector + token confirmed live) ---
-
-  - id: spacex
-    name: SpaceX
-    ats: greenhouse
-    board_token: spacex
-    careers_url: https://boards.greenhouse.io/spacex
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/spacex); aerospace.
-
-  - id: relativity-space
-    name: Relativity Space
-    ats: greenhouse
-    board_token: relativity
-    careers_url: https://boards.greenhouse.io/relativity
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/relativity); aerospace.
-
-  - id: rocket-lab
-    name: Rocket Lab
-    ats: greenhouse
-    board_token: rocketlab
-    careers_url: https://boards.greenhouse.io/rocketlab
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/rocketlab); aerospace.
-
-  - id: archer-aviation
-    name: Archer Aviation
-    ats: greenhouse
-    board_token: archer56
-    careers_url: https://boards.greenhouse.io/archer56
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/archer56); eVTOL aerospace.
-
-  - id: lucid-motors
-    name: Lucid Motors
-    ats: greenhouse
-    board_token: lucidmotors
-    careers_url: https://boards.greenhouse.io/lucidmotors
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/lucidmotors); EV/automotive.
-
-  - id: astranis
-    name: Astranis
-    ats: greenhouse
-    board_token: astranis
-    careers_url: https://boards.greenhouse.io/astranis
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/astranis, ~189 postings); satellite/aerospace hardware.
-
-  - id: figure-ai
-    name: Figure
-    ats: greenhouse
-    board_token: figureai
-    careers_url: https://boards.greenhouse.io/figureai
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/figureai, ~103 postings); humanoid robotics hardware.
-
-  - id: nuro
-    name: Nuro
-    ats: greenhouse
-    board_token: nuro
-    careers_url: https://boards.greenhouse.io/nuro
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/nuro, ~94 postings); autonomous vehicle robotics.
-
-  - id: waymo
-    name: Waymo
-    ats: greenhouse
-    board_token: waymo
-    careers_url: https://careers.withwaymo.com
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/waymo, ~370 postings); autonomous driving hardware/robotics.
-
-  - id: kodiak-robotics
-    name: Kodiak Robotics
-    ats: greenhouse
-    board_token: kodiak
-    careers_url: https://job-boards.greenhouse.io/kodiak
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/kodiak, ~56 postings); autonomous trucking robotics.
-
-  - id: neuralink
-    name: Neuralink
-    ats: greenhouse
-    board_token: neuralink
-    careers_url: https://boards.greenhouse.io/neuralink
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/neuralink, ~80 postings); neurotech hardware/robotics, hires MechE interns.
-
-  - id: redwood-materials
-    name: Redwood Materials
-    ats: greenhouse
-    board_token: redwoodmaterials
-    careers_url: https://boards.greenhouse.io/redwoodmaterials
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/redwoodmaterials, ~126 postings); battery materials/manufacturing.
-
-  - id: divergent
-    name: Divergent Technologies
-    ats: greenhouse
-    board_token: divergent
-    careers_url: https://job-boards.greenhouse.io/divergent
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/divergent, ~138 postings); additive manufacturing for automotive/aerospace.
-
-  - id: vast
-    name: Vast
-    ats: greenhouse
-    board_token: vast
-    careers_url: https://boards.greenhouse.io/vast
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/vast, ~205 postings); space station hardware/aerospace.
-
-  - id: ursa-major
-    name: Ursa Major Technologies
-    ats: greenhouse
-    board_token: ursamajor
-    careers_url: https://www.ursamajor.com/careers
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/ursamajor, ~120 postings); rocket propulsion/aerospace.
-
-  - id: antora-energy
-    name: Antora Energy
-    ats: greenhouse
-    board_token: antora
-    careers_url: https://job-boards.greenhouse.io/antora
-    enabled: true
-    priority: medium
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/antora, ~41 postings); thermal energy storage hardware.
-
-  - id: muon-space
-    name: Muon Space
-    ats: greenhouse
-    board_token: muonspace
-    careers_url: https://job-boards.greenhouse.io/muonspace
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/muonspace, ~142 postings); satellite/aerospace hardware.
-
-  - id: planet-labs
-    name: Planet Labs
-    ats: greenhouse
-    board_token: planetlabs
-    careers_url: https://job-boards.greenhouse.io/planetlabs
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/planetlabs, ~123 postings); satellite imaging/aerospace hardware.
-
-  - id: markforged
-    name: Markforged
-    ats: greenhouse
-    board_token: markforged
-    careers_url: https://job-boards.greenhouse.io/markforged
-    enabled: true
-    priority: medium
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/markforged, ~4 postings); industrial additive manufacturing.
-
-  - id: chargepoint
-    name: ChargePoint
-    ats: greenhouse
-    board_token: chargepoint
-    careers_url: https://www.chargepoint.com/about/opportunities
-    enabled: true
-    priority: medium
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/chargepoint, ~44 postings); EV charging hardware.
-
-  - id: shield-ai
-    name: Shield AI
-    ats: lever
-    board_token: shieldai
-    careers_url: https://jobs.lever.co/shieldai
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Lever board (api.lever.co/v0/postings/shieldai, ~660 postings); defense/aerospace robotics. ITAR roles are filtered per-posting, not per-company.
-
-  - id: zoox
-    name: Zoox
-    ats: lever
-    board_token: zoox
-    careers_url: https://jobs.lever.co/zoox
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Lever board (api.lever.co/v0/postings/zoox, ~241 postings); autonomous vehicle robotics.
-
-  - id: dexterity
-    name: Dexterity
-    ats: lever
-    board_token: dexterity
-    careers_url: https://jobs.lever.co/dexterity
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Lever board (api.lever.co/v0/postings/dexterity, ~13 postings); warehouse robotics.
-
-  - id: bright-machines
-    name: Bright Machines
-    ats: lever
-    board_token: brightmachines
-    careers_url: https://jobs.lever.co/brightmachines
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Lever board (api.lever.co/v0/postings/brightmachines, ~17 postings); manufacturing automation/robotics.
-
-  - id: one-x
-    name: 1X Technologies
-    ats: ashby
-    board_token: 1x
-    careers_url: https://jobs.ashbyhq.com/1x
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/1x, ~102 postings); humanoid robotics hardware.
-
-  - id: saronic
-    name: Saronic Technologies
-    ats: ashby
-    board_token: saronic
-    careers_url: https://jobs.ashbyhq.com/saronic
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/saronic, ~269 postings); autonomous maritime/defense hardware. ITAR roles are filtered per-posting.
-
-  - id: gecko-robotics
-    name: Gecko Robotics
-    ats: ashby
-    board_token: gecko-robotics
-    careers_url: https://jobs.ashbyhq.com/gecko-robotics
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/gecko-robotics, ~21 postings); inspection robotics hardware.
-
-  - id: physical-intelligence
-    name: Physical Intelligence
-    ats: ashby
-    board_token: physicalintelligence
-    careers_url: https://jobs.ashbyhq.com/physicalintelligence
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/physicalintelligence, ~44 postings); robotics foundation models, hires manufacturing/MechE.
-
-  - id: standard-bots
-    name: Standard Bots
-    ats: ashby
-    board_token: standardbots
-    careers_url: https://jobs.ashbyhq.com/standardbots
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations: []
-    notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/standardbots, ~32 postings); industrial robot arms/robotics.
-
-  # --- Big Tech & consumer hardware (public ATS unconfirmed -> fallback) ---
-
-  - id: apple
-    name: Apple
-    ats: html
-    careers_url: https://jobs.apple.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public greenhouse/lever/ashby/smartrecruiters board not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: tesla
-    name: Tesla
-    ats: html
-    careers_url: https://www.tesla.com/careers/search
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: microsoft
-    name: Microsoft
-    ats: html
-    careers_url: https://jobs.careers.microsoft.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: google
-    name: Google
-    ats: html
-    careers_url: https://www.google.com/about/careers/applications/jobs/results
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: meta
-    name: Meta
-    ats: html
-    careers_url: https://www.metacareers.com/jobs
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: nvidia
-    name: NVIDIA
-    ats: workday
-    tenant: nvidia
-    data_center: wd5
-    site: NVIDIAExternalCareerSite
-    careers_url: https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs, ~2000 postings); GPU/semiconductor/robotics hardware.
-
-  - id: intel
-    name: Intel
-    ats: html
-    careers_url: https://jobs.intel.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: amazon
-    name: Amazon
-    ats: html
-    careers_url: https://www.amazon.jobs
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
-
-  - id: dyson
-    name: Dyson
-    ats: html
-    careers_url: https://careers.dyson.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed (SmartRecruiters token not verified). Fallback until a connector exists.
-
-  # --- Aerospace, defense & space (unconfirmed -> fallback) ---
-
-  - id: blue-origin
-    name: Blue Origin
-    ats: html
-    careers_url: https://www.blueorigin.com/careers
-    enabled: true
-    priority: low
-    locations: []
-    notes: Lever token 'blueorigin' resolves but returns no postings; not confirmed usable. Fallback until a connector exists.
-
-  - id: lockheed-martin
-    name: Lockheed Martin
-    ats: html
-    careers_url: https://www.lockheedmartinjobs.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: northrop-grumman
-    name: Northrop Grumman
-    ats: html
-    careers_url: https://www.northropgrumman.com/jobs
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: boeing
-    name: Boeing
-    ats: workday
-    tenant: boeing
-    data_center: wd1
-    site: EXTERNAL_CAREERS
-    careers_url: https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (boeing.wd1.myworkdayjobs.com/wday/cxs/boeing/EXTERNAL_CAREERS/jobs, ~840 postings); aerospace, includes Boeing Canada roles. ITAR roles filtered per-posting.
-
-  - id: rtx-raytheon
-    name: RTX (Raytheon)
-    ats: html
-    careers_url: https://careers.rtx.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: general-dynamics
-    name: General Dynamics
-    ats: html
-    careers_url: https://www.gd.com/careers
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: l3harris
-    name: L3Harris Technologies
-    ats: html
-    careers_url: https://careers.l3harris.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: joby-aviation
-    name: Joby Aviation
-    ats: html
-    careers_url: https://www.jobyaviation.com/careers
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed (greenhouse/lever/ashby tokens not verified). Fallback until a connector exists.
-
-  # --- Automotive, EV & heavy machinery (unconfirmed -> fallback) ---
-
-  - id: rivian
-    name: Rivian
-    ats: html
-    careers_url: https://careers.rivian.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Rivian's Workday board (rivian.wd1.myworkdayjobs.com) returns HTTP 401 (auth-walled); per CORE RULE #1 we never bypass auth, so this stays an html stub.
-
-  - id: general-motors
-    name: General Motors
-    ats: html
-    careers_url: https://search-careers.gm.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: ford
-    name: Ford Motor Company
-    ats: html
-    careers_url: https://careers.ford.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: caterpillar
-    name: Caterpillar
-    ats: html
-    careers_url: https://careers.caterpillar.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: john-deere
-    name: John Deere
-    ats: html
-    careers_url: https://careers.deere.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: cummins
-    name: Cummins
-    ats: html
-    careers_url: https://www.cummins.com/careers
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  # --- Energy, oil & gas (unconfirmed -> fallback) ---
-
-  - id: exxonmobil
-    name: ExxonMobil
-    ats: html
-    careers_url: https://jobs.exxonmobil.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: chevron
-    name: Chevron
-    ats: html
-    careers_url: https://careers.chevron.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: shell
-    name: Shell
-    ats: html
-    careers_url: https://www.shell.com/careers.html
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: bp
-    name: BP
-    ats: html
-    careers_url: https://www.bp.com/en/global/corporate/careers.html
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: slb-schlumberger
-    name: SLB (Schlumberger)
-    ats: html
-    careers_url: https://careers.slb.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: halliburton
-    name: Halliburton
-    ats: html
-    careers_url: https://jobs.halliburton.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: baker-hughes
-    name: Baker Hughes
-    ats: html
-    careers_url: https://careers.bakerhughes.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: ge-vernova
-    name: GE Vernova
-    ats: workday
-    tenant: gevernova
-    data_center: wd5
-    site: Vernova_ExternalSite
-    careers_url: https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (gevernova.wd5.myworkdayjobs.com/wday/cxs/gevernova/Vernova_ExternalSite/jobs, ~2220 postings); energy/power equipment, includes Canada roles.
-
-  # --- Hardware / semiconductor equipment & medical devices (fallback) ---
-
-  - id: asml
-    name: ASML
-    ats: html
-    careers_url: https://www.asml.com/en/careers/find-a-job
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: applied-materials
-    name: Applied Materials
-    ats: html
-    careers_url: https://careers.appliedmaterials.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: lam-research
-    name: Lam Research
-    ats: html
-    careers_url: https://careers.lamresearch.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: kla
-    name: KLA Corporation
-    ats: workday
-    tenant: kla
-    data_center: wd1
-    site: Search
-    careers_url: https://kla.wd1.myworkdayjobs.com/Search
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (kla.wd1.myworkdayjobs.com/wday/cxs/kla/Search/jobs, ~1153 postings); semiconductor process-control equipment.
-
-  - id: texas-instruments
-    name: Texas Instruments
-    ats: html
-    careers_url: https://careers.ti.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: qualcomm
-    name: Qualcomm
-    ats: html
-    careers_url: https://careers.qualcomm.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: stryker
-    name: Stryker
-    ats: workday
-    tenant: stryker
-    data_center: wd1
-    site: StrykerCareers
-    careers_url: https://stryker.wd1.myworkdayjobs.com/StrykerCareers
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs, ~1457 postings); medical-device manufacturing.
-
-  - id: medtronic
-    name: Medtronic
-    ats: workday
-    tenant: medtronic
-    data_center: wd1
-    site: MedtronicCareers
-    careers_url: https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations: []
-    notes: Verified live Workday board (medtronic.wd1.myworkdayjobs.com/wday/cxs/medtronic/MedtronicCareers/jobs, ~989 postings); medical-device manufacturing.
-
-  - id: intuitive-surgical
-    name: Intuitive Surgical
-    ats: html
-    careers_url: https://careers.intuitive.com
-    enabled: true
-    priority: low
-    locations: []
-    notes: Public supported ATS not confirmed. Fallback until a connector exists.
-
-  # --- Canadian employers (unconfirmed public ATS -> fallback, priority low) ---
-
-  - id: mda-space
-    name: MDA Space
-    ats: html
-    careers_url: https://mdacorporation.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: magna-international
-    name: Magna International
-    ats: workday
-    tenant: magna
-    data_center: wd3
-    site: Magna
-    careers_url: https://magna.wd3.myworkdayjobs.com/Magna
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (magna.wd3.myworkdayjobs.com/wday/cxs/magna/Magna/jobs, ~1383 postings); Canadian automotive manufacturing.
-
-  - id: pratt-whitney-canada
-    name: Pratt & Whitney Canada
-    ats: html
-    careers_url: https://careers.rtx.com/global/en/pratt-whitney-canada
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace (RTX); public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: bruce-power
-    name: Bruce Power
-    ats: workday
-    tenant: brucepower
-    data_center: wd3
-    site: BrucePower
-    careers_url: https://brucepower.wd3.myworkdayjobs.com/BrucePower
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (brucepower.wd3.myworkdayjobs.com/wday/cxs/brucepower/BrucePower/jobs, ~22 postings); Canadian nuclear energy.
-
-  - id: ontario-power-generation
-    name: Ontario Power Generation (OPG)
-    ats: html
-    careers_url: https://jobs.opg.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: tc-energy
-    name: TC Energy
-    ats: workday
-    tenant: tcenergy
-    data_center: wd3
-    site: CAREER_SITE_TC
-    careers_url: https://tcenergy.wd3.myworkdayjobs.com/CAREER_SITE_TC
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (tcenergy.wd3.myworkdayjobs.com/wday/cxs/tcenergy/CAREER_SITE_TC/jobs, ~65 postings); Canadian energy/pipelines.
-
-  - id: enbridge
-    name: Enbridge
-    ats: workday
-    tenant: enbridge
-    data_center: wd3
-    site: enbridge_careers
-    careers_url: https://enbridge.wd3.myworkdayjobs.com/enbridge_careers
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (enbridge.wd3.myworkdayjobs.com/wday/cxs/enbridge/enbridge_careers/jobs, ~68 postings); Canadian energy.
-
-  - id: imperial-oil
-    name: Imperial Oil
-    ats: html
-    careers_url: https://careers.imperialoil.ca
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: suncor-energy
-    name: Suncor Energy
-    ats: html
-    careers_url: https://careers.suncor.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: linamar
-    name: Linamar Corporation
-    ats: html
-    careers_url: https://www.linamar.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian automotive/manufacturing; SmartRecruiters 'Linamar' returned totalFound=0 (false positive); careers board loads via JS, tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: bombardier
-    name: Bombardier
-    ats: html
-    careers_url: https://careers.bombardier.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; SmartRecruiters 'Bombardier' returned totalFound=0 (false positive); careers board loads via JS, tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: cae
-    name: CAE Inc.
-    ats: workday
-    tenant: cae
-    data_center: wd3
-    site: career
-    careers_url: https://cae.wd3.myworkdayjobs.com/career
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (cae.wd3.myworkdayjobs.com/wday/cxs/cae/career/jobs, ~378 postings); Canadian aerospace/simulation.
-
-  - id: sanctuary-ai
-    name: Sanctuary AI
-    ats: html
-    careers_url: https://www.sanctuary.ai/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian robotics; public supported ATS not confirmed (ashby 'sanctuary' is a different company). Fallback until a connector exists.
-
-  - id: clearpath-robotics
-    name: Clearpath Robotics (Rockwell Automation)
-    ats: html
-    careers_url: https://rockwellautomation.wd1.myworkdayjobs.com/external_rockwell_automation
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Clearpath Robotics was acquired by Rockwell Automation and its roles are served from Rockwell's global Workday board (see id 'rockwell-automation', verified live); it has no separate public board, so this entry is a pointer stub to avoid duplicate ingestion (the same ~450 postings would otherwise ingest twice under two company ids).
-
-  # ======================================================================
-  # FEAT-002 expansion: user company list (Canadian engineering / aerospace /
-  # energy / mining / robotics / automation). Each board below was probed LIVE
-  # (OPEN_INTERNET) before being wired. Connector entries carry a verified
-  # endpoint + non-zero posting count in notes; everything else is an honest
-  # html stub recording the specific reason it could not be confirmed.
-  # ======================================================================
-
-  # --- Newly verified-live connector boards ---
-
-  - id: telesat
-    name: Telesat
-    ats: lever
-    board_token: telesat
-    careers_url: https://jobs.lever.co/telesat
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations:
-      - Canada
-    notes: Verified live Lever board (api.lever.co/v0/postings/telesat, ~52 postings); Canadian satellite/aerospace (Ottawa).
-
-  - id: kepler-communications
-    name: Kepler Communications
-    ats: lever
-    board_token: kepler
-    careers_url: https://jobs.lever.co/kepler
-    enabled: true
-    priority: high
-    check_interval_minutes: 360
-    locations:
-      - Canada
-    notes: Verified live Lever board (api.lever.co/v0/postings/kepler, ~18 postings; Toronto roles confirmed); Canadian satellite/space hardware.
-
-  - id: rockwell-automation
-    name: Rockwell Automation
-    ats: workday
-    tenant: rockwellautomation
-    data_center: wd1
-    site: external_rockwell_automation
-    careers_url: https://rockwellautomation.wd1.myworkdayjobs.com/external_rockwell_automation
-    enabled: true
-    priority: high
-    check_interval_minutes: 60
-    locations:
-      - Canada
-    notes: Verified live Workday board (rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/external_rockwell_automation/jobs, ~450 postings); industrial automation (parent of Clearpath Robotics - its Canadian robotics roles come from this board; see the clearpath-robotics pointer stub), includes Canada roles.
-
-  - id: aker-solutions
-    name: Aker Solutions
-    ats: html
-    careers_url: https://www.akersolutions.com/careers/
-    enabled: true
-    priority: low
-    locations: []
-    notes: SmartRecruiters board (api.smartrecruiters.com/v1/companies/AkerSolutions/postings) exists for the correct employer but returns totalFound=1 and the single posting is a stale 2017 Business Analyst role in Pune, India - no Canadian or mechanical-engineering roles. Kept as an html stub rather than a connector until the board surfaces relevant postings.
-
-  # --- User-list employers on Workday/portals whose tenant is NOT discoverable
-  #     without JS/scraping (careers HTML loads the board via JavaScript).
-  #     Per CORE RULE #1 no tenant is guessed; kept as honest html stubs. ---
-
-  - id: atkinsrealis
-    name: AtkinsRealis
-    ats: html
-    careers_url: https://careers.atkinsrealis.com/en
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; careers board loads via JS, Workday/portal tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: wsp
-    name: WSP
-    ats: html
-    careers_url: https://www.wsp.com/en-gl/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; careers page returns 403 to non-browser clients and loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'WSP' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: stantec
-    name: Stantec
-    ats: html
-    careers_url: https://www.stantec.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping. SmartRecruiters 'Stantec' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: hatch
-    name: Hatch
-    ats: html
-    careers_url: https://www.hatch.com/Careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: aecom-canada
-    name: AECOM Canada
-    ats: html
-    careers_url: https://aecom.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: bba
-    name: BBA Inc.
-    ats: html
-    careers_url: https://www.bba.ca/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: cima-plus
-    name: CIMA+
-    ats: html
-    careers_url: https://www.cima.ca/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: exp
-    name: Exp
-    ats: html
-    careers_url: https://www.exp.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: tetra-tech-canada
-    name: Tetra Tech Canada
-    ats: html
-    careers_url: https://www.tetratech.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: ghd
-    name: GHD
-    ats: html
-    careers_url: https://www.ghd.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: mott-macdonald-canada
-    name: Mott MacDonald Canada
-    ats: html
-    careers_url: https://www.mottmac.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; SmartRecruiters 'MottMacDonald' returned a single junk posting (name="d"), not a usable board. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: arup-canada
-    name: Arup Canada
-    ats: html
-    careers_url: https://www.arup.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: jacobs
-    name: Jacobs
-    ats: html
-    careers_url: https://careers.jacobs.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. SmartRecruiters 'Jacobs' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: fluor-canada
-    name: Fluor Canada
-    ats: html
-    careers_url: https://fluor.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: worley
-    name: Worley
-    ats: html
-    careers_url: https://www.worley.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering/energy; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: wood
-    name: Wood
-    ats: html
-    careers_url: https://www.woodplc.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Engineering/energy; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: bantrel
-    name: Bantrel
-    ats: html
-    careers_url: https://www.bantrel.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering/EPC; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: black-mcdonald
-    name: Black & McDonald
-    ats: html
-    careers_url: https://www.blackandmcdonald.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian engineering/construction; public supported ATS not confirmed. Fallback until a connector exists.
-
-  # --- Aerospace & defense (own portals / JS-loaded boards / auth-walled) ---
-
-  - id: magellan-aerospace
-    name: Magellan Aerospace
-    ats: html
-    careers_url: https://magellan.aero/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: de-havilland-canada
-    name: De Havilland Aircraft of Canada
-    ats: html
-    careers_url: https://dehavilland.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: viking-air
-    name: Viking Air
-    ats: html
-    careers_url: https://dehavilland.com/viking
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace (De Havilland group); careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: bell-textron-canada
-    name: Bell Textron Canada
-    ats: html
-    careers_url: https://careers.textron.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace (Textron); public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: airbus-canada
-    name: Airbus Canada
-    ats: html
-    careers_url: https://www.airbus.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: boeing-canada
-    name: Boeing Canada
-    ats: html
-    careers_url: https://jobs.boeing.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canada roles are served from Boeing's global Workday board (see id 'boeing', verified live); no separate Boeing Canada board exists, so this entry is a pointer stub to avoid duplicate ingestion.
-
-  - id: safran-landing-systems
-    name: Safran Landing Systems
-    ats: html
-    careers_url: https://www.safran-group.com/jobs
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Aerospace; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: heroux-devtek
-    name: Heroux-Devtek
-    ats: html
-    careers_url: https://www.herouxdevtek.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: standardaero
-    name: StandardAero
-    ats: html
-    careers_url: https://www.standardaero.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Aerospace MRO; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: collins-aerospace
-    name: Collins Aerospace
-    ats: html
-    careers_url: https://careers.rtx.com/global/en/collins-aerospace
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Aerospace (RTX); careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: honeywell-aerospace
-    name: Honeywell Aerospace
-    ats: html
-    careers_url: https://careers.honeywell.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Aerospace; Honeywell uses an Oracle HCM careers portal (careers.honeywell.com/en/sites/Honeywell), not a supported public ATS. SmartRecruiters 'Honeywell' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: l3harris-technologies
-    name: L3Harris Technologies
-    ats: html
-    careers_url: https://careers.l3harris.com/en
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Defense/aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: gdms-canada
-    name: General Dynamics Mission Systems-Canada
-    ats: html
-    careers_url: https://www.gd.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: thales-canada
-    name: Thales Canada
-    ats: html
-    careers_url: https://careers.thalesgroup.com/global/en
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian defense/aerospace; SmartRecruiters 'Thales' returned only stale 2019/20 "talent programme" postings in Spain, not a usable Canadian board. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: lockheed-martin-canada
-    name: Lockheed Martin Canada
-    ats: html
-    careers_url: https://www.lockheedmartinjobs.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: northrop-grumman-canada
-    name: Northrop Grumman Canada
-    ats: html
-    careers_url: https://www.northropgrumman.com/jobs
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: bae-systems-canada
-    name: BAE Systems Canada
-    ats: html
-    careers_url: https://www.baesystems.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian defense; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  # --- Space / satellite startups (BambooHR or own site, not supported ATS) ---
-
-  - id: ghgsat
-    name: GHGSat
-    ats: html
-    careers_url: https://www.ghgsat.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian satellite/space; careers page uses BambooHR (ghgsat.bamboohr.com), which is not a supported connector. Fallback until a BambooHR connector exists.
-
-  - id: northstar-earth-space
-    name: NorthStar Earth & Space
-    ats: html
-    careers_url: https://northstar-data.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian space/SSA; careers page uses BambooHR (northstarearthandspace.bamboohr.com), not a supported connector. Fallback until a BambooHR connector exists.
-
-  - id: maritime-launch-services
-    name: Maritime Launch Services
-    ats: html
-    careers_url: https://maritimelaunch.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian spaceport; public supported ATS not confirmed (greenhouse/lever/ashby/workable tokens not found). Fallback until a connector exists.
-
-  - id: reaction-dynamics
-    name: Reaction Dynamics
-    ats: html
-    careers_url: https://www.reactiondynamics.space/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian rocket propulsion; public supported ATS not confirmed (lever/ashby/greenhouse tokens not found; SmartRecruiters not confirmed). Fallback until a connector exists.
-
-  - id: nordspace
-    name: NordSpace
-    ats: html
-    careers_url: https://nordspace.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian launch/space; public supported ATS not confirmed (greenhouse/lever/ashby tokens not found). Fallback until a connector exists.
-
-  - id: imp-aerospace-defence
-    name: IMP Aerospace & Defence
-    ats: html
-    careers_url: https://imp.ca/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace/defense; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: pal-aerospace
-    name: PAL Aerospace
-    ats: html
-    careers_url: https://www.palaerospace.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: cascade-aerospace
-    name: Cascade Aerospace
-    ats: html
-    careers_url: https://cascadeaerospace.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace MRO; public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: kf-aerospace
-    name: KF Aerospace
-    ats: html
-    careers_url: https://www.kfaero.ca/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace MRO; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: flyht-aerospace
-    name: Flyht Aerospace Solutions
-    ats: html
-    careers_url: https://flyht.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian aerospace tech; public supported ATS not confirmed (lever token not found). Fallback until a connector exists.
-
-  # --- Automotive / electronics manufacturing (own portals / JS boards) ---
-
-  - id: celestica
-    name: Celestica
-    ats: html
-    careers_url: https://www.celestica.com/careers/working-at-celestica
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian electronics manufacturing; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'Celestica' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: martinrea
-    name: Martinrea International
-    ats: html
-    careers_url: https://www.martinrea.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian automotive; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: ats-corporation
-    name: ATS Corporation
-    ats: html
-    careers_url: https://atsautomation.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian automation (ATS Automation); careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: bwxt-canada
-    name: BWX Technologies (BWXT Canada)
-    ats: html
-    careers_url: https://www.bwxt.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian nuclear; SmartRecruiters 'BWXT' is the US parent with only 2 US postings, not a Canadian board. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  # --- Energy / mining / utilities (own portals / SuccessFactors / JS boards) ---
-
-  - id: hydro-quebec
-    name: Hydro-Quebec
-    ats: html
-    careers_url: https://www.hydroquebec.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian utility; careers site uses SuccessFactors (not a supported connector). Fallback until a connector exists.
-
-  - id: bc-hydro
-    name: BC Hydro
-    ats: html
-    careers_url: https://www.bchydro.com/careers.html
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian utility; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: canadian-natural-resources
-    name: Canadian Natural Resources (CNRL)
-    ats: html
-    careers_url: https://www.cnrl.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian energy; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: cenovus-energy
-    name: Cenovus Energy
-    ats: html
-    careers_url: https://www.cenovus.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian energy; careers board loads via JS. A guessed Workday tenant 'cenovus' did not resolve to a confirmed Cenovus board (it returned 404/422 / a non-Cenovus response), so it was rejected per CORE RULE #1 - no tenant is committed on a guess. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: teck-resources
-    name: Teck Resources
-    ats: html
-    careers_url: https://www.teck.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian mining; careers site uses SAP SuccessFactors (career4.successfactors.com?company=Teck), not a supported connector. Fallback until a connector exists.
-
-  - id: cameco
-    name: Cameco
-    ats: html
-    careers_url: https://www.cameco.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian uranium/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: nutrien
-    name: Nutrien
-    ats: html
-    careers_url: https://www.nutrien.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian agriculture/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: rio-tinto
-    name: Rio Tinto
-    ats: html
-    careers_url: https://www.riotinto.com/en/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  - id: vale-canada
-    name: Vale Canada
-    ats: html
-    careers_url: https://vale.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector exists.
-
-  # --- Industrial / electrical / automation (own portals / JS boards) ---
-
-  - id: siemens-canada
-    name: Siemens Canada
-    ats: html
-    careers_url: https://jobs.siemens.com/en_US/externaljobs
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Industrial/automation; Siemens runs its own careers portal (jobs.siemens.com), not a supported public ATS. SmartRecruiters 'Siemens' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: abb-canada
-    name: ABB Canada
-    ats: html
-    careers_url: https://careers.abb/global/en/home
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Industrial/automation; ABB runs its own careers portal, not a supported public ATS. SmartRecruiters 'ABB' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: schneider-electric-canada
-    name: Schneider Electric Canada
-    ats: html
-    careers_url: https://www.se.com/ca/en/about-us/careers/overview.jsp
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Industrial/electrical; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until a connector exists.
-
-  - id: general-electric-canada
-    name: General Electric Canada
-    ats: html
-    careers_url: https://www.gecareers.com
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Industrial; GE's own careers portal, not a supported public ATS (GE Vernova spinoff is wired separately as id 'ge-vernova'). Fallback until a connector exists.
-
-  - id: emerson
-    name: Emerson
-    ats: html
-    careers_url: https://www.emerson.com/en/corporate/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Industrial/automation; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'Emerson' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  - id: hitachi-energy
-    name: Hitachi Energy
-    ats: html
-    careers_url: https://www.hitachienergy.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Energy/power; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'HitachiEnergy' returned totalFound=0 (false positive). Fallback until a connector exists.
-
-  # --- Robotics (BambooHR / JS boards, not supported ATS) ---
-
-  - id: kinova-robotics
-    name: Kinova Robotics
-    ats: html
-    careers_url: https://www.kinovarobotics.com/careers
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian robotics; public supported ATS not confirmed (greenhouse/lever/ashby/workable/smartrecruiters tokens not found). Fallback until a connector exists.
-
-  - id: avidbots
-    name: Avidbots
-    ats: html
-    careers_url: https://avidbots.com/careers/
-    enabled: true
-    priority: low
-    locations:
-      - Canada
-    notes: Canadian robotics; careers page uses BambooHR, which is not a supported connector. Fallback until a BambooHR connector exists.
+- id: spacex
+  name: SpaceX
+  ats: greenhouse
+  board_token: spacex
+  careers_url: https://boards.greenhouse.io/spacex
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/spacex); aerospace.
+  itar_restricted: true
+- id: relativity-space
+  name: Relativity Space
+  ats: greenhouse
+  board_token: relativity
+  careers_url: https://boards.greenhouse.io/relativity
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/relativity); aerospace.
+  itar_restricted: true
+- id: rocket-lab
+  name: Rocket Lab
+  ats: greenhouse
+  board_token: rocketlab
+  careers_url: https://boards.greenhouse.io/rocketlab
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/rocketlab); aerospace.
+  itar_restricted: true
+- id: archer-aviation
+  name: Archer Aviation
+  ats: greenhouse
+  board_token: archer56
+  careers_url: https://boards.greenhouse.io/archer56
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/archer56); eVTOL aerospace.
+  itar_restricted: true
+- id: lucid-motors
+  name: Lucid Motors
+  ats: greenhouse
+  board_token: lucidmotors
+  careers_url: https://boards.greenhouse.io/lucidmotors
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified public Greenhouse board (boards-api.greenhouse.io/v1/boards/lucidmotors); EV/automotive.
+- id: astranis
+  name: Astranis
+  ats: greenhouse
+  board_token: astranis
+  careers_url: https://boards.greenhouse.io/astranis
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/astranis, ~189 postings); satellite/aerospace
+    hardware.
+- id: figure-ai
+  name: Figure
+  ats: greenhouse
+  board_token: figureai
+  careers_url: https://boards.greenhouse.io/figureai
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/figureai, ~103 postings); humanoid robotics hardware.
+- id: nuro
+  name: Nuro
+  ats: greenhouse
+  board_token: nuro
+  careers_url: https://boards.greenhouse.io/nuro
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/nuro, ~94 postings); autonomous vehicle robotics.
+- id: waymo
+  name: Waymo
+  ats: greenhouse
+  board_token: waymo
+  careers_url: https://careers.withwaymo.com
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/waymo, ~370 postings); autonomous driving hardware/robotics.
+- id: kodiak-robotics
+  name: Kodiak Robotics
+  ats: greenhouse
+  board_token: kodiak
+  careers_url: https://job-boards.greenhouse.io/kodiak
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/kodiak, ~56 postings); autonomous trucking robotics.
+- id: neuralink
+  name: Neuralink
+  ats: greenhouse
+  board_token: neuralink
+  careers_url: https://boards.greenhouse.io/neuralink
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/neuralink, ~80 postings); neurotech hardware/robotics,
+    hires MechE interns.
+- id: redwood-materials
+  name: Redwood Materials
+  ats: greenhouse
+  board_token: redwoodmaterials
+  careers_url: https://boards.greenhouse.io/redwoodmaterials
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/redwoodmaterials, ~126 postings); battery materials/manufacturing.
+- id: divergent
+  name: Divergent Technologies
+  ats: greenhouse
+  board_token: divergent
+  careers_url: https://job-boards.greenhouse.io/divergent
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/divergent, ~138 postings); additive manufacturing
+    for automotive/aerospace.
+- id: vast
+  name: Vast
+  ats: greenhouse
+  board_token: vast
+  careers_url: https://boards.greenhouse.io/vast
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/vast, ~205 postings); space station hardware/aerospace.
+  itar_restricted: true
+- id: ursa-major
+  name: Ursa Major Technologies
+  ats: greenhouse
+  board_token: ursamajor
+  careers_url: https://www.ursamajor.com/careers
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/ursamajor, ~120 postings); rocket propulsion/aerospace.
+  itar_restricted: true
+- id: antora-energy
+  name: Antora Energy
+  ats: greenhouse
+  board_token: antora
+  careers_url: https://job-boards.greenhouse.io/antora
+  enabled: true
+  priority: medium
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/antora, ~41 postings); thermal energy storage
+    hardware.
+- id: muon-space
+  name: Muon Space
+  ats: greenhouse
+  board_token: muonspace
+  careers_url: https://job-boards.greenhouse.io/muonspace
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/muonspace, ~142 postings); satellite/aerospace
+    hardware.
+- id: planet-labs
+  name: Planet Labs
+  ats: greenhouse
+  board_token: planetlabs
+  careers_url: https://job-boards.greenhouse.io/planetlabs
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/planetlabs, ~123 postings); satellite imaging/aerospace
+    hardware.
+- id: markforged
+  name: Markforged
+  ats: greenhouse
+  board_token: markforged
+  careers_url: https://job-boards.greenhouse.io/markforged
+  enabled: true
+  priority: medium
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/markforged, ~4 postings); industrial additive
+    manufacturing.
+- id: chargepoint
+  name: ChargePoint
+  ats: greenhouse
+  board_token: chargepoint
+  careers_url: https://www.chargepoint.com/about/opportunities
+  enabled: true
+  priority: medium
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Greenhouse board (boards-api.greenhouse.io/v1/boards/chargepoint, ~44 postings); EV charging hardware.
+- id: shield-ai
+  name: Shield AI
+  ats: lever
+  board_token: shieldai
+  careers_url: https://jobs.lever.co/shieldai
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Lever board (api.lever.co/v0/postings/shieldai, ~660 postings); defense/aerospace robotics. ITAR roles
+    are filtered per-posting, not per-company.
+  itar_restricted: true
+- id: zoox
+  name: Zoox
+  ats: lever
+  board_token: zoox
+  careers_url: https://jobs.lever.co/zoox
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Lever board (api.lever.co/v0/postings/zoox, ~241 postings); autonomous vehicle robotics.
+- id: dexterity
+  name: Dexterity
+  ats: lever
+  board_token: dexterity
+  careers_url: https://jobs.lever.co/dexterity
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Lever board (api.lever.co/v0/postings/dexterity, ~13 postings); warehouse robotics.
+- id: bright-machines
+  name: Bright Machines
+  ats: lever
+  board_token: brightmachines
+  careers_url: https://jobs.lever.co/brightmachines
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Lever board (api.lever.co/v0/postings/brightmachines, ~17 postings); manufacturing automation/robotics.
+- id: one-x
+  name: 1X Technologies
+  ats: ashby
+  board_token: 1x
+  careers_url: https://jobs.ashbyhq.com/1x
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/1x, ~102 postings); humanoid robotics hardware.
+- id: saronic
+  name: Saronic Technologies
+  ats: ashby
+  board_token: saronic
+  careers_url: https://jobs.ashbyhq.com/saronic
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/saronic, ~269 postings); autonomous maritime/defense
+    hardware. ITAR roles are filtered per-posting.
+  itar_restricted: true
+- id: gecko-robotics
+  name: Gecko Robotics
+  ats: ashby
+  board_token: gecko-robotics
+  careers_url: https://jobs.ashbyhq.com/gecko-robotics
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/gecko-robotics, ~21 postings); inspection robotics
+    hardware.
+- id: physical-intelligence
+  name: Physical Intelligence
+  ats: ashby
+  board_token: physicalintelligence
+  careers_url: https://jobs.ashbyhq.com/physicalintelligence
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/physicalintelligence, ~44 postings); robotics foundation
+    models, hires manufacturing/MechE.
+- id: standard-bots
+  name: Standard Bots
+  ats: ashby
+  board_token: standardbots
+  careers_url: https://jobs.ashbyhq.com/standardbots
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations: []
+  notes: Verified live Ashby board (api.ashbyhq.com/posting-api/job-board/standardbots, ~32 postings); industrial robot arms/robotics.
+- id: apple
+  name: Apple
+  ats: html
+  careers_url: https://jobs.apple.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public greenhouse/lever/ashby/smartrecruiters board not confirmed; uses own careers site. Fallback until a connector
+    exists.
+- id: tesla
+  name: Tesla
+  ats: html
+  careers_url: https://www.tesla.com/careers/search
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
+- id: microsoft
+  name: Microsoft
+  ats: html
+  careers_url: https://jobs.careers.microsoft.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
+- id: google
+  name: Google
+  ats: html
+  careers_url: https://www.google.com/about/careers/applications/jobs/results
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
+- id: meta
+  name: Meta
+  ats: html
+  careers_url: https://www.metacareers.com/jobs
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
+- id: nvidia
+  name: NVIDIA
+  ats: workday
+  tenant: nvidia
+  data_center: wd5
+  site: NVIDIAExternalCareerSite
+  careers_url: https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs, ~2000 postings);
+    GPU/semiconductor/robotics hardware.
+- id: intel
+  name: Intel
+  ats: html
+  careers_url: https://jobs.intel.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: amazon
+  name: Amazon
+  ats: html
+  careers_url: https://www.amazon.jobs
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed; uses own careers site. Fallback until a connector exists.
+- id: dyson
+  name: Dyson
+  ats: html
+  careers_url: https://careers.dyson.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed (SmartRecruiters token not verified). Fallback until a connector exists.
+- id: blue-origin
+  name: Blue Origin
+  ats: html
+  careers_url: https://www.blueorigin.com/careers
+  enabled: true
+  priority: low
+  locations: []
+  notes: Lever token 'blueorigin' resolves but returns no postings; not confirmed usable. Fallback until a connector exists.
+  itar_restricted: true
+- id: lockheed-martin
+  name: Lockheed Martin
+  ats: html
+  careers_url: https://www.lockheedmartinjobs.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  itar_restricted: true
+- id: northrop-grumman
+  name: Northrop Grumman
+  ats: html
+  careers_url: https://www.northropgrumman.com/jobs
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  itar_restricted: true
+- id: boeing
+  name: Boeing
+  ats: workday
+  tenant: boeing
+  data_center: wd1
+  site: EXTERNAL_CAREERS
+  careers_url: https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (boeing.wd1.myworkdayjobs.com/wday/cxs/boeing/EXTERNAL_CAREERS/jobs, ~840 postings);
+    aerospace, includes Boeing Canada roles. ITAR roles filtered per-posting.
+  itar_restricted: true
+- id: rtx-raytheon
+  name: RTX (Raytheon)
+  ats: html
+  careers_url: https://careers.rtx.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  itar_restricted: true
+- id: general-dynamics
+  name: General Dynamics
+  ats: html
+  careers_url: https://www.gd.com/careers
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  itar_restricted: true
+- id: l3harris
+  name: L3Harris Technologies
+  ats: html
+  careers_url: https://careers.l3harris.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  itar_restricted: true
+- id: joby-aviation
+  name: Joby Aviation
+  ats: html
+  careers_url: https://www.jobyaviation.com/careers
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed (greenhouse/lever/ashby tokens not verified). Fallback until a connector exists.
+- id: rivian
+  name: Rivian
+  ats: html
+  careers_url: https://careers.rivian.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Rivian's Workday board (rivian.wd1.myworkdayjobs.com) returns HTTP 401 (auth-walled); per CORE RULE
+- id: general-motors
+  name: General Motors
+  ats: html
+  careers_url: https://search-careers.gm.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: ford
+  name: Ford Motor Company
+  ats: html
+  careers_url: https://careers.ford.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: caterpillar
+  name: Caterpillar
+  ats: html
+  careers_url: https://careers.caterpillar.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: john-deere
+  name: John Deere
+  ats: html
+  careers_url: https://careers.deere.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: cummins
+  name: Cummins
+  ats: html
+  careers_url: https://www.cummins.com/careers
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: exxonmobil
+  name: ExxonMobil
+  ats: html
+  careers_url: https://jobs.exxonmobil.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: chevron
+  name: Chevron
+  ats: html
+  careers_url: https://careers.chevron.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: shell
+  name: Shell
+  ats: html
+  careers_url: https://www.shell.com/careers.html
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: bp
+  name: BP
+  ats: html
+  careers_url: https://www.bp.com/en/global/corporate/careers.html
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: slb-schlumberger
+  name: SLB (Schlumberger)
+  ats: html
+  careers_url: https://careers.slb.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: halliburton
+  name: Halliburton
+  ats: html
+  careers_url: https://jobs.halliburton.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: baker-hughes
+  name: Baker Hughes
+  ats: html
+  careers_url: https://careers.bakerhughes.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: ge-vernova
+  name: GE Vernova
+  ats: workday
+  tenant: gevernova
+  data_center: wd5
+  site: Vernova_ExternalSite
+  careers_url: https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (gevernova.wd5.myworkdayjobs.com/wday/cxs/gevernova/Vernova_ExternalSite/jobs, ~2220
+    postings); energy/power equipment, includes Canada roles.
+- id: asml
+  name: ASML
+  ats: html
+  careers_url: https://www.asml.com/en/careers/find-a-job
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: applied-materials
+  name: Applied Materials
+  ats: html
+  careers_url: https://careers.appliedmaterials.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: lam-research
+  name: Lam Research
+  ats: html
+  careers_url: https://careers.lamresearch.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: kla
+  name: KLA Corporation
+  ats: workday
+  tenant: kla
+  data_center: wd1
+  site: Search
+  careers_url: https://kla.wd1.myworkdayjobs.com/Search
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (kla.wd1.myworkdayjobs.com/wday/cxs/kla/Search/jobs, ~1153 postings); semiconductor process-control
+    equipment.
+- id: texas-instruments
+  name: Texas Instruments
+  ats: html
+  careers_url: https://careers.ti.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: qualcomm
+  name: Qualcomm
+  ats: html
+  careers_url: https://careers.qualcomm.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: stryker
+  name: Stryker
+  ats: workday
+  tenant: stryker
+  data_center: wd1
+  site: StrykerCareers
+  careers_url: https://stryker.wd1.myworkdayjobs.com/StrykerCareers
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (stryker.wd1.myworkdayjobs.com/wday/cxs/stryker/StrykerCareers/jobs, ~1457 postings);
+    medical-device manufacturing.
+- id: medtronic
+  name: Medtronic
+  ats: workday
+  tenant: medtronic
+  data_center: wd1
+  site: MedtronicCareers
+  careers_url: https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations: []
+  notes: Verified live Workday board (medtronic.wd1.myworkdayjobs.com/wday/cxs/medtronic/MedtronicCareers/jobs, ~989 postings);
+    medical-device manufacturing.
+- id: intuitive-surgical
+  name: Intuitive Surgical
+  ats: html
+  careers_url: https://careers.intuitive.com
+  enabled: true
+  priority: low
+  locations: []
+  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+- id: mda-space
+  name: MDA Space
+  ats: html
+  careers_url: https://mdacorporation.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; public supported ATS not confirmed. Fallback until a connector exists.
+- id: magna-international
+  name: Magna International
+  ats: workday
+  tenant: magna
+  data_center: wd3
+  site: Magna
+  careers_url: https://magna.wd3.myworkdayjobs.com/Magna
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (magna.wd3.myworkdayjobs.com/wday/cxs/magna/Magna/jobs, ~1383 postings); Canadian automotive
+    manufacturing.
+- id: pratt-whitney-canada
+  name: Pratt & Whitney Canada
+  ats: html
+  careers_url: https://careers.rtx.com/global/en/pratt-whitney-canada
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace (RTX); public supported ATS not confirmed. Fallback until a connector exists.
+- id: bruce-power
+  name: Bruce Power
+  ats: workday
+  tenant: brucepower
+  data_center: wd3
+  site: BrucePower
+  careers_url: https://brucepower.wd3.myworkdayjobs.com/BrucePower
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (brucepower.wd3.myworkdayjobs.com/wday/cxs/brucepower/BrucePower/jobs, ~22 postings);
+    Canadian nuclear energy.
+- id: ontario-power-generation
+  name: Ontario Power Generation (OPG)
+  ats: html
+  careers_url: https://jobs.opg.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
+- id: tc-energy
+  name: TC Energy
+  ats: workday
+  tenant: tcenergy
+  data_center: wd3
+  site: CAREER_SITE_TC
+  careers_url: https://tcenergy.wd3.myworkdayjobs.com/CAREER_SITE_TC
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (tcenergy.wd3.myworkdayjobs.com/wday/cxs/tcenergy/CAREER_SITE_TC/jobs, ~65 postings);
+    Canadian energy/pipelines.
+- id: enbridge
+  name: Enbridge
+  ats: workday
+  tenant: enbridge
+  data_center: wd3
+  site: enbridge_careers
+  careers_url: https://enbridge.wd3.myworkdayjobs.com/enbridge_careers
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (enbridge.wd3.myworkdayjobs.com/wday/cxs/enbridge/enbridge_careers/jobs, ~68 postings);
+    Canadian energy.
+- id: imperial-oil
+  name: Imperial Oil
+  ats: html
+  careers_url: https://careers.imperialoil.ca
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
+- id: suncor-energy
+  name: Suncor Energy
+  ats: html
+  careers_url: https://careers.suncor.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian energy; public supported ATS not confirmed. Fallback until a connector exists.
+- id: linamar
+  name: Linamar Corporation
+  ats: html
+  careers_url: https://www.linamar.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian automotive/manufacturing; SmartRecruiters 'Linamar' returned totalFound=0 (false positive); careers board
+    loads via JS, tenant not discoverable without scraping. Fallback until a connector exists.
+- id: bombardier
+  name: Bombardier
+  ats: html
+  careers_url: https://careers.bombardier.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; SmartRecruiters 'Bombardier' returned totalFound=0 (false positive); careers board loads via
+    JS, tenant not discoverable without scraping. Fallback until a connector exists.
+- id: cae
+  name: CAE Inc.
+  ats: workday
+  tenant: cae
+  data_center: wd3
+  site: career
+  careers_url: https://cae.wd3.myworkdayjobs.com/career
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (cae.wd3.myworkdayjobs.com/wday/cxs/cae/career/jobs, ~378 postings); Canadian aerospace/simulation.
+- id: sanctuary-ai
+  name: Sanctuary AI
+  ats: html
+  careers_url: https://www.sanctuary.ai/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian robotics; public supported ATS not confirmed (ashby 'sanctuary' is a different company). Fallback until
+    a connector exists.
+- id: clearpath-robotics
+  name: Clearpath Robotics (Rockwell Automation)
+  ats: html
+  careers_url: https://rockwellautomation.wd1.myworkdayjobs.com/external_rockwell_automation
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Clearpath Robotics was acquired by Rockwell Automation and its roles are served from Rockwell's global Workday board
+    (see id 'rockwell-automation', verified live); it has no separate public board, so this entry is a pointer stub to avoid
+    duplicate ingestion (the same ~450 postings would otherwise ingest twice under two company ids).
+- id: telesat
+  name: Telesat
+  ats: lever
+  board_token: telesat
+  careers_url: https://jobs.lever.co/telesat
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations:
+  - Canada
+  notes: Verified live Lever board (api.lever.co/v0/postings/telesat, ~52 postings); Canadian satellite/aerospace (Ottawa).
+- id: kepler-communications
+  name: Kepler Communications
+  ats: lever
+  board_token: kepler
+  careers_url: https://jobs.lever.co/kepler
+  enabled: true
+  priority: high
+  check_interval_minutes: 360
+  locations:
+  - Canada
+  notes: Verified live Lever board (api.lever.co/v0/postings/kepler, ~18 postings; Toronto roles confirmed); Canadian satellite/space
+    hardware.
+- id: rockwell-automation
+  name: Rockwell Automation
+  ats: workday
+  tenant: rockwellautomation
+  data_center: wd1
+  site: external_rockwell_automation
+  careers_url: https://rockwellautomation.wd1.myworkdayjobs.com/external_rockwell_automation
+  enabled: true
+  priority: high
+  check_interval_minutes: 60
+  locations:
+  - Canada
+  notes: Verified live Workday board (rockwellautomation.wd1.myworkdayjobs.com/wday/cxs/rockwellautomation/external_rockwell_automation/jobs,
+    ~450 postings); industrial automation (parent of Clearpath Robotics - its Canadian robotics roles come from this board;
+    see the clearpath-robotics pointer stub), includes Canada roles.
+- id: aker-solutions
+  name: Aker Solutions
+  ats: html
+  careers_url: https://www.akersolutions.com/careers/
+  enabled: true
+  priority: low
+  locations: []
+  notes: SmartRecruiters board (api.smartrecruiters.com/v1/companies/AkerSolutions/postings) exists for the correct employer
+    but returns totalFound=1 and the single posting is a stale 2017 Business Analyst role in Pune, India - no Canadian or
+    mechanical-engineering roles. Kept as an html stub rather than a connector until the board surfaces relevant postings.
+- id: atkinsrealis
+  name: AtkinsRealis
+  ats: html
+  careers_url: https://careers.atkinsrealis.com/en
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; careers board loads via JS, Workday/portal tenant not discoverable without scraping. Fallback
+    until a connector exists.
+- id: wsp
+  name: WSP
+  ats: html
+  careers_url: https://www.wsp.com/en-gl/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; careers page returns 403 to non-browser clients and loads via JS, public ATS tenant not discoverable
+    without scraping. SmartRecruiters 'WSP' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: stantec
+  name: Stantec
+  ats: html
+  careers_url: https://www.stantec.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping.
+    SmartRecruiters 'Stantec' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: hatch
+  name: Hatch
+  ats: html
+  careers_url: https://www.hatch.com/Careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: aecom-canada
+  name: AECOM Canada
+  ats: html
+  careers_url: https://aecom.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector
+    exists.
+- id: bba
+  name: BBA Inc.
+  ats: html
+  careers_url: https://www.bba.ca/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
+- id: cima-plus
+  name: CIMA+
+  ats: html
+  careers_url: https://www.cima.ca/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
+- id: exp
+  name: Exp
+  ats: html
+  careers_url: https://www.exp.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering; public supported ATS not confirmed. Fallback until a connector exists.
+- id: tetra-tech-canada
+  name: Tetra Tech Canada
+  ats: html
+  careers_url: https://www.tetratech.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; careers page 403s non-browser clients and loads via JS, tenant not discoverable without scraping. Fallback
+    until a connector exists.
+- id: ghd
+  name: GHD
+  ats: html
+  careers_url: https://www.ghd.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
+    exists.
+- id: mott-macdonald-canada
+  name: Mott MacDonald Canada
+  ats: html
+  careers_url: https://www.mottmac.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; SmartRecruiters 'MottMacDonald' returned a single junk posting (name="d"), not a usable board. Public
+    supported ATS not confirmed. Fallback until a connector exists.
+- id: arup-canada
+  name: Arup Canada
+  ats: html
+  careers_url: https://www.arup.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; public supported ATS not confirmed. Fallback until a connector exists.
+- id: jacobs
+  name: Jacobs
+  ats: html
+  careers_url: https://careers.jacobs.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. SmartRecruiters 'Jacobs'
+    returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: fluor-canada
+  name: Fluor Canada
+  ats: html
+  careers_url: https://fluor.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until a connector
+    exists.
+- id: worley
+  name: Worley
+  ats: html
+  careers_url: https://www.worley.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering/energy; careers board loads via JS, Workday tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: wood
+  name: Wood
+  ats: html
+  careers_url: https://www.woodplc.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Engineering/energy; public supported ATS not confirmed. Fallback until a connector exists.
+- id: bantrel
+  name: Bantrel
+  ats: html
+  careers_url: https://www.bantrel.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering/EPC; public supported ATS not confirmed. Fallback until a connector exists.
+- id: black-mcdonald
+  name: Black & McDonald
+  ats: html
+  careers_url: https://www.blackandmcdonald.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian engineering/construction; public supported ATS not confirmed. Fallback until a connector exists.
+- id: magellan-aerospace
+  name: Magellan Aerospace
+  ats: html
+  careers_url: https://magellan.aero/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: de-havilland-canada
+  name: De Havilland Aircraft of Canada
+  ats: html
+  careers_url: https://dehavilland.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector
+    exists.
+- id: viking-air
+  name: Viking Air
+  ats: html
+  careers_url: https://dehavilland.com/viking
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace (De Havilland group); careers page 403s non-browser clients. Public supported ATS not confirmed.
+    Fallback until a connector exists.
+- id: bell-textron-canada
+  name: Bell Textron Canada
+  ats: html
+  careers_url: https://careers.textron.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace (Textron); public supported ATS not confirmed. Fallback until a connector exists.
+- id: airbus-canada
+  name: Airbus Canada
+  ats: html
+  careers_url: https://www.airbus.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: boeing-canada
+  name: Boeing Canada
+  ats: html
+  careers_url: https://jobs.boeing.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canada roles are served from Boeing's global Workday board (see id 'boeing', verified live); no separate Boeing Canada
+    board exists, so this entry is a pointer stub to avoid duplicate ingestion.
+- id: safran-landing-systems
+  name: Safran Landing Systems
+  ats: html
+  careers_url: https://www.safran-group.com/jobs
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Aerospace; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback until
+    a connector exists.
+- id: heroux-devtek
+  name: Heroux-Devtek
+  ats: html
+  careers_url: https://www.herouxdevtek.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: standardaero
+  name: StandardAero
+  ats: html
+  careers_url: https://www.standardaero.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Aerospace MRO; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback
+    until a connector exists.
+- id: collins-aerospace
+  name: Collins Aerospace
+  ats: html
+  careers_url: https://careers.rtx.com/global/en/collins-aerospace
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Aerospace (RTX); careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback
+    until a connector exists.
+  itar_restricted: true
+- id: honeywell-aerospace
+  name: Honeywell Aerospace
+  ats: html
+  careers_url: https://careers.honeywell.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Aerospace; Honeywell uses an Oracle HCM careers portal (careers.honeywell.com/en/sites/Honeywell), not a supported
+    public ATS. SmartRecruiters 'Honeywell' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: l3harris-technologies
+  name: L3Harris Technologies
+  ats: html
+  careers_url: https://careers.l3harris.com/en
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Defense/aerospace; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: gdms-canada
+  name: General Dynamics Mission Systems-Canada
+  ats: html
+  careers_url: https://www.gd.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: thales-canada
+  name: Thales Canada
+  ats: html
+  careers_url: https://careers.thalesgroup.com/global/en
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian defense/aerospace; SmartRecruiters 'Thales' returned only stale 2019/20 "talent programme" postings in Spain,
+    not a usable Canadian board. Public supported ATS not confirmed. Fallback until a connector exists.
+- id: lockheed-martin-canada
+  name: Lockheed Martin Canada
+  ats: html
+  careers_url: https://www.lockheedmartinjobs.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: northrop-grumman-canada
+  name: Northrop Grumman Canada
+  ats: html
+  careers_url: https://www.northropgrumman.com/jobs
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian defense; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: bae-systems-canada
+  name: BAE Systems Canada
+  ats: html
+  careers_url: https://www.baesystems.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian defense; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed. Fallback
+    until a connector exists.
+- id: ghgsat
+  name: GHGSat
+  ats: html
+  careers_url: https://www.ghgsat.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian satellite/space; careers page uses BambooHR (ghgsat.bamboohr.com), which is not a supported connector. Fallback
+    until a BambooHR connector exists.
+- id: northstar-earth-space
+  name: NorthStar Earth & Space
+  ats: html
+  careers_url: https://northstar-data.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian space/SSA; careers page uses BambooHR (northstarearthandspace.bamboohr.com), not a supported connector.
+    Fallback until a BambooHR connector exists.
+- id: maritime-launch-services
+  name: Maritime Launch Services
+  ats: html
+  careers_url: https://maritimelaunch.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian spaceport; public supported ATS not confirmed (greenhouse/lever/ashby/workable tokens not found). Fallback
+    until a connector exists.
+- id: reaction-dynamics
+  name: Reaction Dynamics
+  ats: html
+  careers_url: https://www.reactiondynamics.space/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian rocket propulsion; public supported ATS not confirmed (lever/ashby/greenhouse tokens not found; SmartRecruiters
+    not confirmed). Fallback until a connector exists.
+- id: nordspace
+  name: NordSpace
+  ats: html
+  careers_url: https://nordspace.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian launch/space; public supported ATS not confirmed (greenhouse/lever/ashby tokens not found). Fallback until
+    a connector exists.
+- id: imp-aerospace-defence
+  name: IMP Aerospace & Defence
+  ats: html
+  careers_url: https://imp.ca/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace/defense; public supported ATS not confirmed. Fallback until a connector exists.
+- id: pal-aerospace
+  name: PAL Aerospace
+  ats: html
+  careers_url: https://www.palaerospace.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector
+    exists.
+- id: cascade-aerospace
+  name: Cascade Aerospace
+  ats: html
+  careers_url: https://cascadeaerospace.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace MRO; public supported ATS not confirmed. Fallback until a connector exists.
+- id: kf-aerospace
+  name: KF Aerospace
+  ats: html
+  careers_url: https://www.kfaero.ca/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace MRO; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback
+    until a connector exists.
+- id: flyht-aerospace
+  name: Flyht Aerospace Solutions
+  ats: html
+  careers_url: https://flyht.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian aerospace tech; public supported ATS not confirmed (lever token not found). Fallback until a connector exists.
+- id: celestica
+  name: Celestica
+  ats: html
+  careers_url: https://www.celestica.com/careers/working-at-celestica
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian electronics manufacturing; careers board loads via JS, public ATS tenant not discoverable without scraping.
+    SmartRecruiters 'Celestica' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: martinrea
+  name: Martinrea International
+  ats: html
+  careers_url: https://www.martinrea.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian automotive; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed.
+    Fallback until a connector exists.
+- id: ats-corporation
+  name: ATS Corporation
+  ats: html
+  careers_url: https://atsautomation.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian automation (ATS Automation); careers board loads via JS, public ATS tenant not discoverable without scraping.
+    Fallback until a connector exists.
+- id: bwxt-canada
+  name: BWX Technologies (BWXT Canada)
+  ats: html
+  careers_url: https://www.bwxt.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian nuclear; SmartRecruiters 'BWXT' is the US parent with only 2 US postings, not a Canadian board. Public supported
+    ATS not confirmed. Fallback until a connector exists.
+- id: hydro-quebec
+  name: Hydro-Quebec
+  ats: html
+  careers_url: https://www.hydroquebec.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian utility; careers site uses SuccessFactors (not a supported connector). Fallback until a connector exists.
+- id: bc-hydro
+  name: BC Hydro
+  ats: html
+  careers_url: https://www.bchydro.com/careers.html
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian utility; careers page 403s non-browser clients. Public supported ATS not confirmed. Fallback until a connector
+    exists.
+- id: canadian-natural-resources
+  name: Canadian Natural Resources (CNRL)
+  ats: html
+  careers_url: https://www.cnrl.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian energy; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until
+    a connector exists.
+- id: cenovus-energy
+  name: Cenovus Energy
+  ats: html
+  careers_url: https://www.cenovus.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian energy; careers board loads via JS. A guessed Workday tenant 'cenovus' did not resolve to a confirmed Cenovus
+    board (it returned 404/422 / a non-Cenovus response), so it was rejected per CORE RULE
+- id: teck-resources
+  name: Teck Resources
+  ats: html
+  careers_url: https://www.teck.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian mining; careers site uses SAP SuccessFactors (career4.successfactors.com?company=Teck), not a supported
+    connector. Fallback until a connector exists.
+- id: cameco
+  name: Cameco
+  ats: html
+  careers_url: https://www.cameco.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian uranium/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback
+    until a connector exists.
+- id: nutrien
+  name: Nutrien
+  ats: html
+  careers_url: https://www.nutrien.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian agriculture/mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback
+    until a connector exists.
+- id: rio-tinto
+  name: Rio Tinto
+  ats: html
+  careers_url: https://www.riotinto.com/en/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
+    exists.
+- id: vale-canada
+  name: Vale Canada
+  ats: html
+  careers_url: https://vale.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Mining; careers board loads via JS, public ATS tenant not discoverable without scraping. Fallback until a connector
+    exists.
+- id: siemens-canada
+  name: Siemens Canada
+  ats: html
+  careers_url: https://jobs.siemens.com/en_US/externaljobs
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Industrial/automation; Siemens runs its own careers portal (jobs.siemens.com), not a supported public ATS. SmartRecruiters
+    'Siemens' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: abb-canada
+  name: ABB Canada
+  ats: html
+  careers_url: https://careers.abb/global/en/home
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Industrial/automation; ABB runs its own careers portal, not a supported public ATS. SmartRecruiters 'ABB' returned
+    totalFound=0 (false positive). Fallback until a connector exists.
+- id: schneider-electric-canada
+  name: Schneider Electric Canada
+  ats: html
+  careers_url: https://www.se.com/ca/en/about-us/careers/overview.jsp
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Industrial/electrical; careers page 403s non-browser clients and loads via JS. Public supported ATS not confirmed.
+    Fallback until a connector exists.
+- id: general-electric-canada
+  name: General Electric Canada
+  ats: html
+  careers_url: https://www.gecareers.com
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Industrial; GE's own careers portal, not a supported public ATS (GE Vernova spinoff is wired separately as id 'ge-vernova').
+    Fallback until a connector exists.
+- id: emerson
+  name: Emerson
+  ats: html
+  careers_url: https://www.emerson.com/en/corporate/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Industrial/automation; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters
+    'Emerson' returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: hitachi-energy
+  name: Hitachi Energy
+  ats: html
+  careers_url: https://www.hitachienergy.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Energy/power; careers board loads via JS, public ATS tenant not discoverable without scraping. SmartRecruiters 'HitachiEnergy'
+    returned totalFound=0 (false positive). Fallback until a connector exists.
+- id: kinova-robotics
+  name: Kinova Robotics
+  ats: html
+  careers_url: https://www.kinovarobotics.com/careers
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian robotics; public supported ATS not confirmed (greenhouse/lever/ashby/workable/smartrecruiters tokens not
+    found). Fallback until a connector exists.
+- id: avidbots
+  name: Avidbots
+  ats: html
+  careers_url: https://avidbots.com/careers/
+  enabled: true
+  priority: low
+  locations:
+  - Canada
+  notes: Canadian robotics; careers page uses BambooHR, which is not a supported connector. Fallback until a BambooHR connector
+    exists.
