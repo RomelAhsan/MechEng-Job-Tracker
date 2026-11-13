@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.config.user_loader import load_user_profile
-from jobtracker.db.models import Job
+from jobtracker.db.models import Company, Job
 from jobtracker.extract.degree_experience import extract_degree_experience
 from jobtracker.extract.term import extract_term
 from jobtracker.extract.work_auth import extract_work_auth
@@ -65,7 +65,13 @@ def _to_canonical(job: Job) -> CanonicalJob:
     )
 
 
-def screen_job(session: Session, job: Job, profile: UserProfile) -> None:
+def screen_job(
+    session: Session,
+    job: Job,
+    profile: UserProfile,
+    *,
+    itar_restricted_company: bool = False,
+) -> None:
     """Classify, extract, and score a single row and persist the results."""
     title = job.title or ""
     description = job.description or ""
@@ -114,7 +120,9 @@ def screen_job(session: Session, job: Job, profile: UserProfile) -> None:
     # Stage-1 deterministic hard-eligibility verdict (SEPARATE from fit_score):
     # a 100%-disqualifying job gets eligible=False and is removed everywhere the
     # user browses; unknowns stay eligible and survive to the AI stage.
-    verdict = compute_stage1_eligibility(job, profile, degree_exp)
+    verdict = compute_stage1_eligibility(
+        job, profile, degree_exp, itar_restricted_company=itar_restricted_company
+    )
     job.eligible = verdict.eligible
     job.eligibility_reasons = list(verdict.reasons)
     job.eligibility_evidence = list(verdict.evidence)
@@ -132,13 +140,26 @@ def screen_jobs(
     When ``job_ids`` is ``None`` every job in the database is screened.
     """
     active_profile = _load_profile(profile)
+    # Map of company_id -> itar_restricted so an ITAR-restricted employer's
+    # non-Canada roles are hard-failed regardless of per-posting text.
+    itar_map = {
+        cid: bool(flag)
+        for cid, flag in session.execute(
+            select(Company.id, Company.itar_restricted)
+        )
+    }
     stmt = select(Job)
     if job_ids is not None:
         stmt = stmt.where(Job.job_id.in_(job_ids))
 
     summary = ScreeningSummary()
     for job in session.scalars(stmt):
-        screen_job(session, job, active_profile)
+        screen_job(
+            session,
+            job,
+            active_profile,
+            itar_restricted_company=itar_map.get(job.company_id, False),
+        )
         summary.screened += 1
         if job.classification == "strong_match":
             summary.strong += 1

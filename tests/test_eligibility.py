@@ -69,6 +69,53 @@ def test_itar_fails() -> None:
     assert "itar" in verdict.failed_rules
 
 
+def test_itar_company_us_role_fails_even_without_citizenship_text() -> None:
+    # A SpaceX US role with NO explicit citizenship text must still be excluded
+    # when the company is ITAR-restricted -- this is the SpaceX case.
+    verdict = compute_stage1_eligibility(
+        _job(country="United States", location="Hawthorne, CA"),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=True,
+    )
+    assert verdict.eligible is False
+    assert "itar_company" in verdict.failed_rules
+
+
+def test_itar_company_unknown_country_role_fails() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(country=None, location="Remote"),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=True,
+    )
+    assert verdict.eligible is False
+    assert "itar_company" in verdict.failed_rules
+
+
+def test_itar_company_canada_role_survives() -> None:
+    # Only the Canada-located roles from an ITAR-restricted company pass.
+    verdict = compute_stage1_eligibility(
+        _job(country="Canada", location="Toronto, ON, Canada"),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=True,
+    )
+    assert "itar_company" not in verdict.failed_rules
+
+
+def test_non_itar_company_us_role_not_failed_by_itar_company_rule() -> None:
+    # A non-ITAR company's US role is not hit by this rule (leniency intact;
+    # the normal sponsorship path still applies).
+    verdict = compute_stage1_eligibility(
+        _job(country="United States", location="Austin, TX"),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=False,
+    )
+    assert "itar_company" not in verdict.failed_rules
+
+
 def test_us_citizen_only_fails_citizenship() -> None:
     verdict = compute_stage1_eligibility(
         _job(eligibility_status=LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED),

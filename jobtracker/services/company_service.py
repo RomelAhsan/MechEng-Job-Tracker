@@ -108,6 +108,7 @@ def _apply_config(company: Company, config: CompanyConfig) -> None:
     company.check_interval_minutes = config.check_interval_minutes
     company.locations = list(config.locations)
     company.notes = config.notes
+    company.itar_restricted = bool(config.itar_restricted)
 
 
 def sync_from_yaml(session: Session, companies: list[CompanyConfig]) -> SyncResult:

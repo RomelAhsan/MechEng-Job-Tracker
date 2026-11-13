@@ -50,6 +50,11 @@ class CompanyConfig(BaseModel):
     check_interval_minutes: int | None = None
     locations: list[str] = Field(default_factory=list)
     notes: str | None = None
+    # US aerospace/defense employers whose roles require US citizenship (ITAR/
+    # EAR) regardless of whether a given posting states it. When True, every
+    # non-Canada-located role from this company is marked ineligible for the
+    # Canadian-citizen profile (only Canada-located roles survive).
+    itar_restricted: bool = False
     # Workday needs tenant + data_center (wd1/wd3/wd5...) + site id; these stay
     # optional so existing YAML without them remains valid. When absent the
     # connectors parse the identifiers from the ``*.myworkdayjobs.com``

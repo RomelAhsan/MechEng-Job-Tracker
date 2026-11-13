@@ -82,6 +82,8 @@ def compute_stage1_eligibility(
     job_or_canonical: object,
     profile: UserProfile,
     degree_exp: DegreeExperienceExtraction,
+    *,
+    itar_restricted_company: bool = False,
 ) -> EligibilityVerdict:
     """Apply the deterministic HARD-exclude rules and return the verdict.
 
@@ -135,6 +137,24 @@ def compute_stage1_eligibility(
             "Title is a professional (non-student) role with no co-op/intern "
             "signal.",
             match.group(0) if match else None,
+        )
+
+    # (2c) ITAR-restricted COMPANY policy. US aerospace/defense employers
+    # (SpaceX, Lockheed, Northrop, etc.) require US citizenship by law (ITAR/
+    # EAR) on essentially every role, whether or not the individual posting
+    # spells it out -- so relying on per-posting citizenship text misses most
+    # of them. For a company flagged itar_restricted, ANY role NOT located in
+    # Canada (including unknown-country) is ineligible for the Canadian-citizen
+    # profile; only their Canada-located roles survive. This is the user's
+    # explicit rule and is deterministic (no dependence on posting text/AI).
+    country = (getattr(job, "country", None) or "").strip().lower()
+    if itar_restricted_company and country != "canada":
+        where = getattr(job, "location", None) or "outside Canada"
+        _fail(
+            "itar_company",
+            "US aerospace/defense employer requiring US citizenship (ITAR); "
+            "only Canada-located roles are eligible.",
+            str(where),
         )
 
     # (3)/(4) ITAR + citizenship/sponsorship: read the persisted status (never
