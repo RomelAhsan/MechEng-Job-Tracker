@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadFeed } from "./api";
+import { Countdown } from "./Countdown";
 import { applyFilters, companyOptions, remoteOptions } from "./filtering";
 import { JobCard } from "./JobCard";
 import {
@@ -27,6 +28,17 @@ export function App() {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+
+  const refetch = useCallback(() => {
+    loadFeed()
+      .then((f) => {
+        setFeed(f);
+        setError(null);
+      })
+      .catch(() => {
+        /* keep showing the current data if a refetch blips */
+      });
+  }, []);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -61,6 +73,9 @@ export function App() {
             {feed.tracked_company_count} companies
           </p>
         )}
+        <p className="countdown-row">
+          <Countdown onDue={refetch} />
+        </p>
       </header>
 
       {error && (

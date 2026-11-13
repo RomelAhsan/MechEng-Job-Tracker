@@ -130,6 +130,30 @@ body {
 .ai-skills, .ai-concerns { margin: 0.2rem 0; }
 .ai-concerns { color: var(--warn); }
 
+.countdown-row { margin: 0.6rem 0 0; }
+.countdown {
+  display: inline-block;
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: #dbeafe;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+}
+.countdown strong { font-variant-numeric: tabular-nums; }
+.cd-note { color: #94a3b8; font-size: 0.72rem; }
+
+.report-wrong {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+}
+.report-wrong:hover { color: var(--warn); border-color: var(--warn); }
+
 .sitefoot { margin: 1.5rem 0 0.5rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 480px) {

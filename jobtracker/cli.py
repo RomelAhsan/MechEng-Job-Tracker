@@ -305,6 +305,71 @@ def export_web(
     typer.echo(f"Wrote web feed to {path}.")
 
 
+@app.command("learn-from-feedback")
+def learn_from_feedback() -> None:
+    """Summarise 'wrong match' feedback into concrete filter-fix actions.
+
+    Reads open GitHub issues labelled ``job-feedback`` (opened by the site's
+    'Report wrong match' button) via the ``gh`` CLI, classifies each into a
+    deterministic follow-up (flag a company ITAR-restricted, extend a Stage-1
+    seniority/degree/new-grad rule, strengthen field signals, ...) and prints an
+    actionable report so the filters can be tightened and the same kind of
+    posting stops slipping through.
+    """
+    import json
+    import subprocess
+
+    from jobtracker.services import feedback_service
+
+    try:
+        out = subprocess.run(
+            [
+                "gh", "issue", "list",
+                "--label", "job-feedback",
+                "--state", "open",
+                "--json", "number,title,body",
+                "--limit", "200",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        issues = json.loads(out.stdout or "[]")
+    except Exception as exc:  # noqa: BLE001 - never crash; guide the user.
+        typer.echo(
+            "Could not fetch feedback issues via `gh` "
+            f"({exc}). Ensure the GitHub CLI is installed and authenticated."
+        )
+        return
+
+    report = feedback_service.build_report(issues)
+    if not report.items:
+        typer.echo("No open 'job-feedback' issues. Nothing to learn yet.")
+        return
+
+    typer.echo(f"Analysed {len(report.items)} feedback report(s).\n")
+    if report.signal_counts:
+        typer.echo("Most common problems (highest-impact fixes first):")
+        for sig, n in sorted(
+            report.signal_counts.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            typer.echo(f"  {n:>3}x  {sig}")
+    if report.company_counts:
+        typer.echo("\nCompanies most reported:")
+        for co, n in sorted(
+            report.company_counts.items(), key=lambda kv: kv[1], reverse=True
+        )[:10]:
+            typer.echo(f"  {n:>3}x  {co}")
+    typer.echo("\nPer-report suggested actions:")
+    for item in report.items:
+        ref = f"#{item.issue_number}" if item.issue_number else "(no number)"
+        typer.echo(f"\n{ref} {item.title}")
+        if item.company:
+            typer.echo(f"   company: {item.company}")
+        for action in item.suggested_actions or ["Needs manual review (no clear signal)."]:
+            typer.echo(f"   -> {action}")
+
+
 @app.command("dashboard")
 def dashboard() -> None:
     """Launch the Streamlit dashboard."""
