@@ -86,38 +86,62 @@ def test_itar_company_explicit_us_citizen_role_hard_fails() -> None:
     assert "itar" in verdict.failed_rules
 
 
-def test_itar_company_ambiguous_us_role_routed_to_ai_not_hard_failed() -> None:
-    # Refined rule: an ambiguous (no explicit citizenship text) US role at an
-    # ITAR company is NOT hard-excluded here -- it stays eligible for the AI
-    # stage, but is flagged so the AI scrutinises it.
+def test_itar_company_us_role_hard_excluded_by_default() -> None:
+    # A US-located role at an ITAR company with NO explicit openness is now
+    # hard-excluded at Stage 1 (the user is categorically ineligible; we don't
+    # leave it for the quota-limited AI). This is the SpaceX case.
     verdict = compute_stage1_eligibility(
-        _job(country="United States", location="Hawthorne, CA"),
+        _job(
+            country="United States",
+            location="Hawthorne, CA",
+            title="Propulsion Engineer (Raptor)",
+            description="Design rocket engines. Bachelor's in engineering.",
+        ),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=True,
     )
-    assert verdict.eligible is True
+    assert verdict.eligible is False
+    assert "itar_company" in verdict.failed_rules
+
+
+def test_itar_company_us_role_survives_only_if_explicitly_open() -> None:
+    # The one honest exception: a US ITAR-company role that explicitly offers
+    # sponsorship / welcomes non-US persons is NOT hard-excluded; it survives
+    # and is flagged for the AI to double-check.
+    verdict = compute_stage1_eligibility(
+        _job(
+            country="United States",
+            location="Hawthorne, CA",
+            title="Mechanical Engineering Intern",
+            description="Open to international applicants; visa sponsorship available.",
+        ),
+        PROFILE,
+        _no_degree_exp(),
+        itar_restricted_company=True,
+    )
+    assert "itar_company" not in verdict.failed_rules
     assert verdict.itar_company_ambiguous is True
 
 
-def test_itar_company_canada_role_not_flagged() -> None:
+def test_itar_company_canada_role_survives() -> None:
     verdict = compute_stage1_eligibility(
         _job(country="Canada", location="Toronto, ON, Canada"),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=True,
     )
-    assert verdict.itar_company_ambiguous is False
+    assert "itar_company" not in verdict.failed_rules
 
 
-def test_non_itar_company_us_role_not_flagged() -> None:
+def test_non_itar_company_us_role_not_hit_by_itar_rule() -> None:
     verdict = compute_stage1_eligibility(
         _job(country="United States", location="Austin, TX"),
         PROFILE,
         _no_degree_exp(),
         itar_restricted_company=False,
     )
-    assert verdict.itar_company_ambiguous is False
+    assert "itar_company" not in verdict.failed_rules
 
 
 def test_us_citizen_only_fails_citizenship() -> None:
