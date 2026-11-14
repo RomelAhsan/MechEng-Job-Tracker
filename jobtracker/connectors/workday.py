@@ -66,7 +66,27 @@ class WorkdayCoordinates:
 
     def public_url(self, external_path: str) -> str:
         """The public careers/apply URL for an ``externalPath``."""
-        return f"{self.base}/{self.site}{external_path}"
+        return with_locale(f"{self.base}/{self.site}{external_path}")
+
+
+_LOCALE_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+
+
+def with_locale(url: str, locale: str = "en-US") -> str:
+    """Insert the ``/en-US/`` locale segment into a myworkdayjobs job URL.
+
+    Workday's career-site router shows "An error occurred. Please contact
+    Workday Support" / a 404 for ``{host}/{site}/job/...`` links opened in a
+    browser; ``{host}/en-US/{site}/job/...`` resolves. URLs that already carry
+    a locale, or are not myworkdayjobs URLs, are returned unchanged.
+    """
+    match = re.match(r"^(https?://[^/]*myworkdayjobs\.com)/([^/?#]+)(.*)$", url or "")
+    if not match:
+        return url
+    host, first, rest = match.groups()
+    if _LOCALE_RE.match(first):
+        return url
+    return f"{host}/{locale}/{first}{rest}"
 
 
 def parse_workday_url(url: str) -> WorkdayCoordinates | None:
@@ -211,8 +231,8 @@ class WorkdayConnector(Connector):
                 title=posting.get("title") or known.title,
                 location=known.location,
                 description_html=known.description,
-                application_url=known.application_url,
-                source_url=known.application_url,
+                application_url=with_locale(known.application_url),
+                source_url=with_locale(known.application_url),
                 posted_at=known.posted_at,
                 extra={"_reused": True},
             )
@@ -233,7 +253,9 @@ class WorkdayConnector(Connector):
             if isinstance(maybe, dict):
                 info = maybe
 
-        public_url = info.get("externalUrl") or coords.public_url(external_path)
+        public_url = with_locale(
+            info.get("externalUrl") or coords.public_url(external_path)
+        )
         req_id = self._req_id(posting)
         source_job_id = info.get("id") or req_id or external_path
 
