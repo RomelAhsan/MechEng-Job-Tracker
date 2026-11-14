@@ -17,12 +17,17 @@ from apify_client import ApifyClient
 ACTOR = os.environ.get("APIFY_WORKDAY_ACTOR", "gooyer.co~myworkdayjobs").replace("~", "/")
 BASE = "https://gevernova.wd5.myworkdayjobs.com"
 SITE = "Vernova_ExternalSite"
+# (url, proxy settings). Datacenter proxy got HTTP 521 from wd5 on the first
+# probe, so try the residential group, plus a wd3 board as a control.
 VARIANTS = {
-    "plain": f"{BASE}/{SITE}",
-    "plain_slash": f"{BASE}/{SITE}/",
-    "locale": f"{BASE}/en-US/{SITE}",
-    "locale_q": f"{BASE}/en-US/{SITE}?q=intern",
-    "plain_q": f"{BASE}/{SITE}?q=intern",
+    "wd5_residential": (
+        f"{BASE}/en-US/{SITE}?q=intern",
+        {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"]},
+    ),
+    "wd3_control": (
+        "https://cae.wd3.myworkdayjobs.com/en-US/career?q=intern",
+        {"useApifyProxy": True},
+    ),
 }
 
 
@@ -33,14 +38,14 @@ def main() -> None:
         print("APIFY_TOKEN not set")
         return
     client = ApifyClient(token=token)
-    for name, url in VARIANTS.items():
+    for name, (url, proxy) in VARIANTS.items():
         try:
             run = client.actor(ACTOR).call(
                 run_input={
                     "startUrls": [{"url": url}],
                     "pagination": 1,
                     "details": False,
-                    "proxyUrls": {"useApifyProxy": True},
+                    "proxyUrls": proxy,
                 },
                 memory_mbytes=1024,
                 run_timeout=timedelta(seconds=180),
