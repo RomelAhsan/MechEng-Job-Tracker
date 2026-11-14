@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AddCompany } from "./AddCompany";
 import { loadFeed } from "./api";
 import { Countdown } from "./Countdown";
 import {
@@ -30,6 +31,7 @@ export function App() {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [view, setView] = useState<"jobs" | "add">("jobs");
 
   const refetch = useCallback(() => {
     loadFeed()
@@ -82,9 +84,29 @@ export function App() {
         <p className="countdown-row">
           <Countdown onDue={refetch} />
         </p>
+        <nav className="tabs" aria-label="Views">
+          <button
+            type="button"
+            className={view === "jobs" ? "tab tab-active" : "tab"}
+            aria-pressed={view === "jobs"}
+            onClick={() => setView("jobs")}
+          >
+            Jobs
+          </button>
+          <button
+            type="button"
+            className={view === "add" ? "tab tab-active" : "tab"}
+            aria-pressed={view === "add"}
+            onClick={() => setView("add")}
+          >
+            Add a company
+          </button>
+        </nav>
       </header>
 
-      {error && (
+      {view === "add" && <AddCompany />}
+
+      {view === "jobs" && error && (
         <div className="state state-error" role="alert">
           <p>{error}</p>
           <p className="muted">
@@ -94,9 +116,11 @@ export function App() {
         </div>
       )}
 
-      {!error && !feed && <div className="state">Loading your jobs…</div>}
+      {view === "jobs" && !error && !feed && (
+        <div className="state">Loading your jobs…</div>
+      )}
 
-      {feed && (
+      {view === "jobs" && feed && (
         <>
           <section className="controls" aria-label="Filters">
             <input

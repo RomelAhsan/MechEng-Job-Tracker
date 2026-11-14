@@ -21,6 +21,9 @@ export interface Job {
   application_url: string | null;
   source_url: string | null;
   posted_at: string | null;
+  // Whole days since the best-available posting date (true posting date first,
+  // then first-seen). null when the age cannot be determined.
+  posted_days_ago: number | null;
   first_seen_at: string | null;
   first_seen_ago: string | null;
   source_last_checked_at: string | null;

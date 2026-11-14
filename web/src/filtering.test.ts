@@ -22,6 +22,7 @@ function job(partial: Partial<Job> & { job_id: string }): Job {
     application_url: "https://a",
     source_url: "https://s",
     posted_at: null,
+    posted_days_ago: null,
     first_seen_at: null,
     first_seen_ago: null,
     source_last_checked_at: null,
