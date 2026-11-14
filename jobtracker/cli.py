@@ -256,13 +256,54 @@ def run(company: str | None = typer.Option(None, "--company", help="Limit to one
     )
 
 
+def _rules_fingerprint() -> str:
+    """Hash of everything that decides a screening result.
+
+    New and changed postings are screened during ingest, so a full re-screen
+    is only needed when the rules (code) or the profile/company config change.
+    """
+    import hashlib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent
+    files = sorted(
+        [*root.glob("screen/*.py"), *root.glob("extract/*.py"),
+         *root.glob("normalize/*.py"), root / "services/screening_service.py"]
+    )
+    files += [Path("config/user.yaml"), Path("config/companies.yaml")]
+    digest = hashlib.sha256()
+    for path in files:
+        if path.exists():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 @app.command("screen")
-def screen() -> None:
+def screen(
+    only_if_rules_changed: bool = typer.Option(
+        False,
+        "--only-if-rules-changed",
+        help="Skip the full re-screen when rules/config are unchanged since the "
+        "last full screen (state/screen_fingerprint.txt).",
+    ),
+) -> None:
     """Classify, extract, and score stored jobs."""
+    from pathlib import Path
+
     from jobtracker.services import screening_service
+
+    marker = Path("state/screen_fingerprint.txt")
+    fingerprint = _rules_fingerprint()
+    if only_if_rules_changed and marker.exists():
+        if marker.read_text(encoding="utf-8").strip() == fingerprint:
+            typer.echo("Rules unchanged since the last full screen; skipped.")
+            return
 
     with _session_scope() as session:
         summary = screening_service.screen_jobs(session)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(fingerprint, encoding="utf-8")
     typer.echo(
         f"Screened {summary.screened} jobs: {summary.strong} strong, "
         f"{summary.possible} possible, {summary.weak} weak, "

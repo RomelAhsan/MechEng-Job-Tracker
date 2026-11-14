@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-DEFAULT_LEDGER_PATH = "output/apify_usage.json"
+DEFAULT_LEDGER_PATH = "state/apify_usage.json"
 
 
 @dataclass
@@ -96,6 +96,19 @@ class ApifyBudget:
     def _spent_this_month(self, ledger: dict[str, float], today: date) -> float:
         prefix = f"{today.year:04d}-{today.month:02d}-"
         return sum(v for k, v in ledger.items() if k.startswith(prefix))
+
+    # --- per-company run spacing -------------------------------------------
+    def due(self, company_id: str, interval_seconds: float) -> bool:
+        """True when ``company_id`` has not been fetched in ``interval_seconds``."""
+        last = self._load().get(f"last_run:{company_id}")
+        if last is None:
+            return True
+        return datetime.now(UTC).timestamp() - last >= interval_seconds
+
+    def mark_run(self, company_id: str) -> None:
+        ledger = self._load()
+        ledger[f"last_run:{company_id}"] = datetime.now(UTC).timestamp()
+        self._save(ledger)
 
     # --- public API --------------------------------------------------------
     def check(self, *, today: date | None = None) -> BudgetDecision:

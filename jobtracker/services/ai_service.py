@@ -452,7 +452,14 @@ def parse_strict_json_array(text: str) -> list[dict]:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        raise AiServiceError(f"AI batch response was not valid JSON: {exc}") from exc
+        # The model occasionally emits a trailing comma before } or ].
+        repaired = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+        try:
+            data = json.loads(repaired)
+        except json.JSONDecodeError:
+            raise AiServiceError(
+                f"AI batch response was not valid JSON: {exc}"
+            ) from exc
     if not isinstance(data, list):
         raise AiServiceError("AI batch response must be a JSON array.")
 
@@ -795,6 +802,21 @@ def analyze_jobs_bulk(
                 logger.warning("Still rate limited after waiting; skipping batch.")
                 summary.errors += len(group)
                 continue
+            except AiServiceError as exc:
+                # Malformed model output: retry the same batch once.
+                logger.warning("AI batch unparseable (%s); retrying once.", exc)
+                try:
+                    stored = analyze_jobs_batch(
+                        session,
+                        group,
+                        user_id=user_id,
+                        provider=active_provider,
+                        settings=settings,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Bulk AI batch failed (%d jobs)", len(group))
+                    summary.errors += len(group)
+                    continue
             except Exception:  # noqa: BLE001 - one bad batch never aborts the pass.
                 logger.exception("Bulk AI batch failed (%d jobs)", len(group))
                 summary.errors += len(group)

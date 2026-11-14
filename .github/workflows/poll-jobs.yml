@@ -88,6 +88,17 @@ jobs:
           restore-keys: |
             jobtracker-db-
 
+      # state/ holds the Apify spend ledger and the screening-rules
+      # fingerprint; both must persist between runs. Kept in its own cache
+      # entry so the database cache above keeps its existing key/version.
+      - name: Restore run state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/
+          key: jobtracker-state-${{ github.run_id }}
+          restore-keys: |
+            jobtracker-state-
+
       # A cache saved from an interrupted/overlapping run can be a half-written,
       # CORRUPT SQLite file ("database disk image is malformed"). Restoring it
       # would make every step fail, and the run would then save the corrupt file
@@ -121,8 +132,11 @@ jobs:
       - name: Poll every enabled job board
         run: python -m jobtracker run
 
+      # New and changed postings are already screened during the poll. The
+      # full re-screen of every stored job only runs when the rules or config
+      # changed since the last one (fingerprint kept in state/).
       - name: Screen and score the postings
-        run: python -m jobtracker screen
+        run: python -m jobtracker screen --only-if-rules-changed
 
       # Stage-2 AI judgment over the Stage-1 survivors, throttled for the
       # Gemini free tier. Only effective when GEMINI_API_KEY is set; with no key it
@@ -181,6 +195,20 @@ jobs:
         with:
           path: jobtracker.db
           key: jobtracker-db-${{ github.run_id }}
+
+      # The Apify spend ledger is always kept (it guards the free credit), but
+      # the screening fingerprint only counts if this run's database was saved;
+      # otherwise the next run must re-screen everything.
+      - name: Forget the screening fingerprint when the DB was not saved
+        if: always() && env.SAVE_DB != '1'
+        run: rm -f state/screen_fingerprint.txt
+
+      - name: Cache run state
+        if: always() && hashFiles('state/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/
+          key: jobtracker-state-${{ github.run_id }}
 
       # Download this from the run page to read your jobs without any hosting.
       # In outbox mode the rendered emails show up here too.

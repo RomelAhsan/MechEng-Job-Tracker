@@ -45,6 +45,12 @@ def _field(obj: object, *names: str) -> object:
     return None
 
 
+def with_locale_url(url: str) -> str:
+    from jobtracker.connectors.workday import with_locale
+
+    return with_locale(url)
+
+
 class ApifyWorkdayConnector(Connector):
     """Fetch a Workday board via a free Apify Actor, under a daily budget cap."""
 
@@ -158,6 +164,123 @@ class ApifyWorkdayConnector(Connector):
             return []
 
         return [self._to_raw(item) for item in items if self._to_raw(item) is not None]
+
+    # --- async fallback for Workday boards that block datacenter IPs --------
+    def start_student_search(self, company: CompanyConfig) -> str | None:
+        """Start (without waiting) an Actor run over the board's student roles.
+
+        Used when the direct Workday API answers 521 from the CI runner's IP.
+        The run only searches intern / co-op / student postings so it stays
+        small and cheap. Returns the run id, or ``None`` when skipped (no
+        token, budget used up, or this company ran recently).
+        """
+        from jobtracker.connectors.workday import with_locale
+
+        if not self.available or not company.careers_url:
+            return None
+        decision = self._budget.check()
+        if decision.exhausted or decision.allowance_usd < float(
+            self._settings.apify_min_allowance_usd
+        ):
+            logger.info(
+                "Apify allowance $%.4f too low; not fetching %s this run.",
+                decision.allowance_usd,
+                company.id,
+            )
+            return None
+        interval = float(self._settings.apify_fallback_interval_hours) * 3600
+        if not self._budget.due(company.id, interval):
+            logger.info("Apify fallback for %s ran recently; skipping.", company.id)
+            return None
+        client = self._get_client()
+        if client is None:
+            return None
+        base = with_locale(company.careers_url.rstrip("/"))
+        start_urls = [
+            {"url": f"{base}?q={term}"} for term in ("intern", "co-op", "student")
+        ]
+        actor_id = self._settings.apify_workday_actor.replace("~", "/")
+        try:
+            run = client.actor(actor_id).start(  # type: ignore[attr-defined]
+                run_input={
+                    "startUrls": start_urls,
+                    "pagination": 0,
+                    "details": True,
+                    "proxyUrls": {"useApifyProxy": True},
+                },
+                max_total_charge_usd=(
+                    Decimal(str(self._settings.apify_max_run_charge_usd))
+                    if self._settings.apify_max_run_charge_usd > 0
+                    else None
+                ),
+                # Bounded run: the Actor is stopped by Apify itself after this,
+                # so a stuck run can never keep spending credit.
+                run_timeout=timedelta(
+                    seconds=int(self._settings.apify_fallback_wait_secs) + 120
+                ),
+                memory_mbytes=1024,
+            )
+        except Exception as exc:  # noqa: BLE001 - fail-soft.
+            logger.warning("Could not start Apify run for %s: %s", company.id, exc)
+            return None
+        run_id = _field(run, "id")
+        if run_id:
+            self._budget.mark_run(company.id)
+            logger.info("Started Apify fallback run %s for %s.", run_id, company.id)
+        return str(run_id) if run_id else None
+
+    def collect(self, run_id: str, *, wait_secs: int) -> list[RawJob] | None:
+        """Wait up to ``wait_secs`` for a started run and return its jobs.
+
+        Returns ``None`` when the run did not succeed in time (it is aborted so
+        it stops using credit). Usage is recorded in the budget ledger.
+        """
+        client = self._get_client()
+        if client is None:
+            return None
+        run_client = client.run(run_id)  # type: ignore[attr-defined]
+        try:
+            run = run_client.wait_for_finish(
+                wait_duration=timedelta(seconds=max(1, int(wait_secs)))
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Waiting for Apify run %s failed: %s", run_id, exc)
+            run = None
+        status = _field(run, "status") if run else None
+        if status != "SUCCEEDED":
+            try:
+                run_client.abort()
+                run = run_client.get()
+            except Exception:  # noqa: BLE001
+                pass
+        charged = float(_field(run, "usage_total_usd", "usageTotalUsd") or 0.0) if run else 0.0
+        self._budget.record(charged)
+        if status != "SUCCEEDED":
+            logger.info("Apify run %s ended as %s; no jobs used.", run_id, status)
+            return None
+        dataset_id = _field(run, "default_dataset_id", "defaultDatasetId")
+        if not dataset_id:
+            return []
+        try:
+            items = client.dataset(dataset_id).list_items().items  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Apify dataset read failed for run %s: %s", run_id, exc)
+            return None
+        jobs = [self._to_raw(item) for item in items]
+        found = [j for j in jobs if j is not None]
+        seen: set[str] = set()
+        unique: list[RawJob] = []
+        for job in found:
+            if job.source_job_id not in seen:
+                seen.add(job.source_job_id)
+                if job.application_url:
+                    job.application_url = with_locale_url(job.application_url)
+                    job.source_url = job.application_url
+                unique.append(job)
+        logger.info(
+            "Apify run %s returned %d jobs (charged $%.4f).", run_id, len(unique), charged
+        )
+        return unique
 
     @staticmethod
     def _to_raw(item: dict) -> RawJob | None:
