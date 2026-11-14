@@ -23,6 +23,12 @@ class ATSType(StrEnum):
     WORKABLE = "workable"
     #: SAP SuccessFactors Career Site Builder; board_token = career-site host.
     SUCCESSFACTORS = "successfactors"
+    #: Phenom People public search; board_token = the careers host (e.g.
+    #: ``careers.rtx.com``). Fetched via POST {host}/widgets.
+    PHENOM = "phenom"
+    #: Oracle Cloud Recruiting (ORC); board_token = ``{origin}|{siteNumber}``.
+    #: Fetched via the recruitingCEJobRequisitions REST API.
+    ORACLE = "oracle"
     RSS = "rss"
     SITEMAP = "sitemap"
     JSON_LD = "json_ld"

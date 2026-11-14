@@ -1,0 +1,35 @@
+{
+  "refineSearch": {
+    "totalHits": 2,
+    "data": {
+      "jobs": [
+        {
+          "jobId": "RTX111",
+          "reqId": "01789000",
+          "title": "Mechanical Design Engineer Intern",
+          "city": "Tucson",
+          "state": "Arizona",
+          "country": "United States",
+          "location": "Tucson, Arizona, United States",
+          "applyUrl": "https://careers.rtx.com/global/en/apply/RTX111",
+          "postedDate": "2026-01-10",
+          "dateCreated": 1767974400000,
+          "descriptionTeaser": "Teaser only for RTX111."
+        },
+        {
+          "jobId": "RTX222",
+          "reqId": "01789001",
+          "title": "Thermal Systems Co-op",
+          "city": "Dallas",
+          "state": "Texas",
+          "country": "United States",
+          "location": "Dallas, Texas, United States",
+          "applyUrl": "https://careers.rtx.com/global/en/apply/RTX222",
+          "postedDate": "2026-01-09",
+          "dateCreated": 1767888000000,
+          "descriptionTeaser": "Teaser only for RTX222."
+        }
+      ]
+    }
+  }
+}

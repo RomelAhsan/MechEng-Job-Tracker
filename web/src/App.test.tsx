@@ -31,6 +31,7 @@ function feed(overrides: Partial<Feed> = {}): Feed {
         application_url: "https://apply.example/a",
         source_url: "https://src.example/a",
         posted_at: null,
+        posted_days_ago: 2,
         first_seen_at: "2026-01-01T10:00:00+00:00",
         first_seen_ago: "2 hours ago",
         source_last_checked_at: "2026-01-01T11:50:00+00:00",

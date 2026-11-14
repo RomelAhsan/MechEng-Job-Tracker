@@ -37,6 +37,17 @@ function duration(job: Job): string {
   return "duration not specified";
 }
 
+// "Posted X days ago" from the best-available posting date (true posting date
+// first, then first-seen). The user cares about time since the ACTUAL posting,
+// not when we fetched it.
+function postedAgo(job: Job): string | null {
+  const days = job.posted_days_ago;
+  if (days == null) return null;
+  if (days <= 0) return "Posted today";
+  if (days === 1) return "Posted 1 day ago";
+  return `Posted ${days} days ago`;
+}
+
 function AiReasoningPanel({ r }: { r: AiReasoning }) {
   const rows: Array<[string, string | undefined]> = [
     ["Mechanical fit", r.mechanical_relevance],
@@ -155,6 +166,8 @@ export function JobCard({ job }: { job: Job }) {
           )}
         </div>
         <p className="freshness">
+          {postedAgo(job) ? <span className="posted-ago">{postedAgo(job)}</span> : null}
+          {postedAgo(job) && job.first_seen_ago ? " · " : ""}
           {job.first_seen_ago ? `Found ${job.first_seen_ago}` : ""}
           {job.source_last_checked_ago
             ? ` · board checked ${job.source_last_checked_ago}`

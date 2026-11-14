@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "Id": "REQ-1001",
+      "Title": "Intern, Hardware Development Engineer",
+      "PostedDate": "2026-01-12",
+      "ExternalDescriptionStr": "<p>Full description 1001. Build hardware.</p>",
+      "ExternalResponsibilitiesStr": "<p>Responsibilities: design and test.</p>",
+      "ExternalQualificationsStr": "<p>Qualifications: SolidWorks, GD&T.</p>"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "TotalJobsCount": 2,
+      "requisitionList": [
+        {
+          "Id": "REQ-1001",
+          "Title": "Intern, Hardware Development Engineer",
+          "PostedDate": "2026-01-12",
+          "PrimaryLocation": "Mayfield Heights, Ohio",
+          "PrimaryLocationCountry": "United States",
+          "ShortDescriptionStr": "Short teaser 1001.",
+          "WorkplaceType": "Hybrid"
+        },
+        {
+          "Id": "REQ-1002",
+          "Title": "Mechanical Engineering Co-op",
+          "PostedDate": "2026-01-11",
+          "PrimaryLocation": "Charlotte, North Carolina",
+          "PrimaryLocationCountry": "United States",
+          "ShortDescriptionStr": "Short teaser 1002.",
+          "WorkplaceType": "Onsite"
+        }
+      ]
+    }
+  ]
+}

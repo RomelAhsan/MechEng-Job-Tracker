@@ -113,12 +113,41 @@ def create_user(
         typer.echo(f"Created user {normalized} (role={user.role}).")
 
 
+def _persist_and_poll(session: Session, http, company_id: str, poll: bool) -> None:
+    """Upsert the added company into companies.yaml and optionally poll it.
+
+    Called after a successful add so the declarative seed stays in sync with
+    the database. ``--poll`` runs an immediate single-company ingestion so the
+    new company's jobs appear without waiting for the scheduled poll.
+    """
+    from jobtracker.config.companies_loader import append_or_update_yaml
+    from jobtracker.services import company_service, ingest_service
+
+    config = company_service.config_for_yaml(session, company_id)
+    path = append_or_update_yaml(get_settings().companies_file, config)
+    typer.echo(f"Persisted {company_id} to {path}.")
+    # Machine-readable line so callers (the add-company workflow) can capture
+    # the resolved slug without parsing prose.
+    typer.echo(f"COMPANY_ID={company_id}")
+    if poll:
+        summary = ingest_service.run(session, http, company_ids=[company_id])
+        typer.echo(
+            f"Polled {company_id}: {summary.total_new} new, "
+            f"{summary.total_changed} changed, {summary.errors} errors."
+        )
+
+
 @app.command("add-company")
 def add_company(
     url: str = typer.Argument(..., help="Careers URL to detect and add"),
     company_id: str | None = typer.Option(None, "--id", help="Explicit company id/slug"),
     name: str | None = typer.Option(None, "--name", help="Display name"),
     priority: str = typer.Option("medium", "--priority", help="high|medium|low"),
+    poll: bool = typer.Option(
+        False,
+        "--poll/--no-poll",
+        help="Immediately poll just this company after adding it.",
+    ),
 ) -> None:
     """Add a company by detecting its ATS from a careers URL."""
     from jobtracker.connectors.http import HttpClient
@@ -128,10 +157,12 @@ def add_company(
         result = company_service.add_from_url(
             session, url, http, company_id=company_id, name=name, priority=priority
         )
-    typer.echo(
-        f"Added {result.company_id} (ats={result.ats}, token={result.board_token}); "
-        f"baseline imported {result.baseline_jobs} jobs."
-    )
+        typer.echo(
+            f"Added {result.company_id} (ats={result.ats}, "
+            f"token={result.board_token}); "
+            f"baseline imported {result.baseline_jobs} jobs."
+        )
+        _persist_and_poll(session, http, result.company_id, poll)
 
 
 @app.command("add-company-by-name")
@@ -143,6 +174,11 @@ def add_company_by_name(
         False,
         "--confirm",
         help="Import a found board even if its identity could not be confirmed.",
+    ),
+    poll: bool = typer.Option(
+        False,
+        "--poll/--no-poll",
+        help="Immediately poll just this company after adding it.",
     ),
 ) -> None:
     """Add a company by NAME: probe public boards and baseline-import the match.
@@ -162,11 +198,12 @@ def add_company_by_name(
             session, name, http, company_id=company_id, priority=priority,
             confirm=confirm,
         )
-    typer.echo(result.message)
-    if result.needs_verification:
-        typer.echo("Re-run with --confirm to import this board.")
-    if not result.resolved:
-        raise typer.Exit(code=1)
+        typer.echo(result.message)
+        if result.needs_verification:
+            typer.echo("Re-run with --confirm to import this board.")
+        if not result.resolved:
+            raise typer.Exit(code=1)
+        _persist_and_poll(session, http, result.add_result.company_id, poll)
 
 
 def _sync_seed(session: Session) -> None:

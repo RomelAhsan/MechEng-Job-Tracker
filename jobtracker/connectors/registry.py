@@ -14,6 +14,8 @@ from jobtracker.connectors.feed import JsonLdConnector, RssConnector, SitemapCon
 from jobtracker.connectors.greenhouse import GreenhouseConnector
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.lever import LeverConnector
+from jobtracker.connectors.oracle import OracleConnector, parse_oracle_url
+from jobtracker.connectors.phenom import PhenomConnector, parse_phenom_host
 from jobtracker.connectors.smartrecruiters import SmartRecruitersConnector
 from jobtracker.connectors.successfactors import SuccessFactorsConnector
 from jobtracker.connectors.workable import WorkableConnector, parse_workable_account
@@ -29,6 +31,8 @@ _SUPPORTED: dict[str, type[Connector]] = {
     ATSType.WORKDAY.value: WorkdayConnector,
     ATSType.WORKABLE.value: WorkableConnector,
     ATSType.SUCCESSFACTORS.value: SuccessFactorsConnector,
+    ATSType.PHENOM.value: PhenomConnector,
+    ATSType.ORACLE.value: OracleConnector,
     ATSType.RSS.value: RssConnector,
     ATSType.SITEMAP.value: SitemapConnector,
     ATSType.JSON_LD.value: JsonLdConnector,
@@ -64,6 +68,12 @@ _ASHBY_HOSTS = ("ashbyhq.com", "jobs.ashbyhq.com", "api.ashbyhq.com")
 _SMARTRECRUITERS_HOSTS = ("smartrecruiters.com",)
 _WORKDAY_HOSTS = ("myworkdayjobs.com",)
 _WORKABLE_HOSTS = ("workable.com",)
+_ORACLE_HOSTS = ("oraclecloud.com",)
+#: Phenom careers hosts are custom vanity domains, so there is no shared
+#: fingerprint to match. Detect only hosts we have VERIFIED serve a Phenom
+#: ``/widgets`` search; everything else falls through to the html fallback so
+#: an arbitrary domain is never misclassified as Phenom.
+_PHENOM_HOSTS = ("careers.rtx.com",)
 
 
 def _first_path_segment(path: str) -> str | None:
@@ -119,6 +129,12 @@ def detect_ats(url: str) -> DetectedATS:
     if any(h in host for h in _WORKABLE_HOSTS):
         account = parse_workable_account(url if "//" in url else f"https://{url}")
         return DetectedATS(ATSType.WORKABLE.value, account)
+    if any(h in host for h in _ORACLE_HOSTS) and "/hcmui/candidateexperience" in path.lower():
+        coords = parse_oracle_url(url if "//" in url else f"https://{url}")
+        token = f"{coords[0]}|{coords[1]}" if coords else None
+        return DetectedATS(ATSType.ORACLE.value, token)
+    if any(host == h or host.endswith(f".{h}") for h in _PHENOM_HOSTS):
+        return DetectedATS(ATSType.PHENOM.value, parse_phenom_host(host))
     if host.endswith(".rss") or path.endswith(".rss") or "/rss" in path or "/feed" in path:
         return DetectedATS(ATSType.RSS.value, url)
     if "sitemap" in path and path.endswith(".xml"):

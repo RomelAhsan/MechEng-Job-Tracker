@@ -154,6 +154,60 @@ body {
 }
 .report-wrong:hover { color: var(--warn); border-color: var(--warn); }
 
+.posted-ago { color: var(--ink); font-weight: 600; }
+
+/* Tab navigation between the Jobs view and the Add-a-company view. */
+.tabs { display: flex; gap: 0.5rem; margin: 0.9rem 0 0; }
+.tab {
+  background: transparent;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab-active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+/* Add-a-company section. */
+.add-company {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.add-company h2 { margin: 0 0 0.4rem; font-size: 1.25rem; }
+.add-company .muted { color: var(--muted); font-size: 0.88rem; }
+.add-company .small { font-size: 0.78rem; }
+.token-box { margin: 0.85rem 0; border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; }
+.token-box summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.token-entry, .token-saved { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.token-entry input {
+  flex: 1 1 260px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.add-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.add-input {
+  flex: 1 1 280px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+.add-company .btn { border: none; cursor: pointer; }
+.add-company .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.add-status { margin-top: 0.6rem; min-height: 1.2rem; }
+.state-ok { color: var(--new); margin: 0; font-size: 0.9rem; }
+.state-error-text { color: #b91c1c; margin: 0; font-size: 0.9rem; }
+.added-list { margin-top: 1rem; }
+.added-list h3 { margin: 0 0 0.35rem; font-size: 0.95rem; }
+.added-list ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
+
 .sitefoot { margin: 1.5rem 0 0.5rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 
 @media (max-width: 480px) {

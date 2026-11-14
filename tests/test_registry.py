@@ -5,6 +5,8 @@ from __future__ import annotations
 from jobtracker.connectors.fallback import FallbackConnector
 from jobtracker.connectors.feed import JsonLdConnector, RssConnector, SitemapConnector
 from jobtracker.connectors.http import HttpClient
+from jobtracker.connectors.oracle import OracleConnector
+from jobtracker.connectors.phenom import PhenomConnector
 from jobtracker.connectors.registry import detect_ats, get_connector, is_supported
 from jobtracker.connectors.workable import WorkableConnector
 from jobtracker.connectors.workday import WorkdayConnector
@@ -64,5 +66,34 @@ def test_detect_ats_feeds() -> None:
     )
 
 
+def test_phenom_oracle_connectors_registered() -> None:
+    client = _client()
+    assert is_supported(ATSType.PHENOM.value)
+    assert is_supported(ATSType.ORACLE.value)
+    assert isinstance(get_connector(ATSType.PHENOM.value, client), PhenomConnector)
+    assert isinstance(get_connector(ATSType.ORACLE.value, client), OracleConnector)
+    client.close()
+
+
+def test_detect_ats_oracle() -> None:
+    result = detect_ats(
+        "https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/"
+        "sites/Honeywell/requisitions"
+    )
+    assert result.ats == ATSType.ORACLE.value
+    assert result.board_token == "https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell"
+
+
+def test_detect_ats_phenom_known_host() -> None:
+    result = detect_ats("https://careers.rtx.com/global/en/home")
+    assert result.ats == ATSType.PHENOM.value
+    assert result.board_token == "careers.rtx.com"
+
+
 def test_detect_ats_unknown_is_html() -> None:
     assert detect_ats("https://careers.apple.com").ats == ATSType.HTML.value
+    # An arbitrary oraclecloud host WITHOUT the CandidateExperience path is not
+    # misclassified as Oracle.
+    assert (
+        detect_ats("https://foo.oraclecloud.com/something").ats == ATSType.HTML.value
+    )

@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from jobtracker.config import ConfigError, load_companies, load_user_profile
+from jobtracker.config import (
+    ConfigError,
+    append_or_update_yaml,
+    load_companies,
+    load_user_profile,
+)
 from jobtracker.connectors.registry import is_supported
+from jobtracker.schemas.company import CompanyConfig
 
 VALID_COMPANIES = """
 companies:
@@ -123,6 +129,46 @@ def test_load_companies_duplicate_id(tmp_path):
     path = _write(tmp_path, "dup.yaml", text)
     with pytest.raises(ConfigError, match="Duplicate company id"):
         load_companies(path)
+
+
+def test_append_or_update_yaml_is_idempotent(tmp_path):
+    path = _write(tmp_path, "companies.yaml", VALID_COMPANIES)
+    config = CompanyConfig(
+        id="rtx",
+        name="RTX",
+        ats="phenom",
+        board_token="careers.rtx.com",
+        careers_url="https://careers.rtx.com",
+        itar_restricted=True,
+    )
+    # First add appends a new entry.
+    append_or_update_yaml(path, config)
+    companies = load_companies(path)
+    ids = [c.id for c in companies]
+    assert ids.count("rtx") == 1
+    assert len(companies) == 3
+    rtx = next(c for c in companies if c.id == "rtx")
+    assert rtx.ats == "phenom"
+    assert rtx.itar_restricted is True
+
+    # Second add of the SAME id updates in place (no duplicate).
+    updated = CompanyConfig(
+        id="rtx", name="RTX Updated", ats="phenom", board_token="careers.rtx.com"
+    )
+    append_or_update_yaml(path, updated)
+    companies2 = load_companies(path)
+    assert [c.id for c in companies2].count("rtx") == 1
+    assert len(companies2) == 3
+    assert next(c for c in companies2 if c.id == "rtx").name == "RTX Updated"
+
+
+def test_append_or_update_yaml_creates_file_when_missing(tmp_path):
+    path = str(tmp_path / "new" / "companies.yaml")
+    config = CompanyConfig(id="honeywell", name="Honeywell", ats="oracle",
+                           board_token="https://x.oraclecloud.com|Honeywell")
+    append_or_update_yaml(path, config)
+    companies = load_companies(path)
+    assert [c.id for c in companies] == ["honeywell"]
 
 
 def test_load_user_valid(tmp_path):

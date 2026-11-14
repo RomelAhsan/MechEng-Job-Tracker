@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "Id": "REQ-1002",
+      "Title": "Mechanical Engineering Co-op",
+      "PostedDate": "2026-01-11",
+      "ExternalDescriptionStr": "<p>Full description 1002. Thermal analysis.</p>",
+      "ExternalResponsibilitiesStr": "<p>Responsibilities: CFD and FEA.</p>",
+      "ExternalQualificationsStr": "<p>Qualifications: ANSYS.</p>"
+    }
+  ]
+}
