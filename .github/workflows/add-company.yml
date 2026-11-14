@@ -1,0 +1,173 @@
+# Add a company on demand (triggered from the website's "Add a company" tab).
+#
+# The static GitHub Pages site cannot run server code, so the "Add" button
+# dispatches THIS workflow via the GitHub REST API (authorized by a
+# fine-grained token the user pastes once; it lives only in their browser's
+# localStorage and is never committed). The workflow:
+#   1. discovers the ATS for the given name/URL and adds the company, which
+#      also upserts config/companies.yaml (idempotent);
+#   2. commits the updated config back to main so the scheduled poller keeps
+#      tracking it;
+#   3. runs an immediate single-company poll + screen + export so the new
+#      company's jobs appear within a minute or two (the normal poll-jobs.yml
+#      runs every 15 minutes alongside this).
+#
+# Mirrors poll-jobs.yml's env / cache / secret conventions. No new secret is
+# introduced; GEMINI_API_KEY / APIFY_TOKEN stay in repo secrets and are
+# optional (absent keys put the run into safe no-op mode, never failing it).
+name: Add a company
+
+on:
+  workflow_dispatch:
+    inputs:
+      company:
+        description: "Company name or careers URL"
+        required: true
+        type: string
+
+# Needed to commit config/companies.yaml back to main.
+permissions:
+  contents: write
+
+# Never let two adds (or an add and nothing) race over the same database.
+concurrency:
+  group: add-company
+  cancel-in-progress: false
+
+jobs:
+  add-company:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: sqlite:///./jobtracker.db
+      # AI is optional; any non-empty key turns it on, blank = off.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # Optional free-tier fetcher for JS-locked Workday boards; blank = off.
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # Keep the token so the later "git push" of the config can authenticate.
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install the application
+        run: pip install -e .
+
+      # Reuse the poller's "already seen" history so the add's baseline import
+      # and single-company poll only report genuinely new postings.
+      - name: Restore the job database
+        uses: actions/cache/restore@v4
+        with:
+          path: jobtracker.db
+          key: jobtracker-db-${{ github.run_id }}
+          restore-keys: |
+            jobtracker-db-
+
+      - name: Restore run state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/
+          key: jobtracker-state-${{ github.run_id }}
+          restore-keys: |
+            jobtracker-state-
+
+      # A cached SQLite file from an interrupted run can be corrupt; drop it so
+      # init-db rebuilds a clean one rather than failing every step.
+      - name: Verify the database is not corrupt
+        run: |
+          if [ -f jobtracker.db ]; then
+            if ! sqlite3 jobtracker.db "PRAGMA integrity_check;" | grep -q '^ok$'; then
+              echo "::warning::Restored database is corrupt; starting fresh."
+              rm -f jobtracker.db
+            else
+              echo "Database integrity check passed."
+            fi
+          else
+            echo "No cached database; a fresh one will be created."
+          fi
+
+      - name: Apply database migrations
+        run: python -m jobtracker init-db
+
+      # Decide name vs URL from the input: a value that looks like a URL (has a
+      # scheme or a dot-domain) goes to add-company; otherwise add-company-by-name.
+      # --poll runs an immediate single-company ingest right after the add. Both
+      # commands upsert config/companies.yaml and print "COMPANY_ID=<slug>",
+      # which we capture into a step output for the summary.
+      - name: Add the company and poll it
+        id: add
+        run: |
+          set -euo pipefail
+          COMPANY="${{ github.event.inputs.company }}"
+          if printf '%s' "$COMPANY" | grep -Eq '://|\.'; then
+            echo "Treating input as a careers URL."
+            python -m jobtracker add-company "$COMPANY" --poll | tee add.log
+          else
+            echo "Treating input as a company name."
+            python -m jobtracker add-company-by-name "$COMPANY" --poll | tee add.log
+          fi
+          SLUG="$(grep -oE '^COMPANY_ID=.*' add.log | tail -n1 | cut -d= -f2-)"
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "Added company slug: ${SLUG}"
+
+      # Commit the updated config back to main so the scheduled poller tracks it.
+      # Only commits when the file actually changed; never commits secrets or
+      # the database.
+      - name: Commit the updated company config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/companies.yaml
+          if git diff --cached --quiet; then
+            echo "No config change to commit."
+          else
+            git commit -m "chore: add company via workflow_dispatch (${{ steps.add.outputs.slug }})"
+            git push
+          fi
+
+      # New/changed postings are screened during the poll; a full re-screen only
+      # runs when the rules/config changed since the last one.
+      - name: Screen and score the postings
+        run: python -m jobtracker screen --only-if-rules-changed
+
+      # Regenerate the static feed the website reads so the new company's jobs
+      # show up right away.
+      - name: Regenerate the website feed
+        run: python -m jobtracker export-web --output web/public/data/jobs.json
+
+      - name: Report source health
+        run: python -m jobtracker health
+
+      # Verify the DB is intact, THEN save it, so a corrupt file is never cached.
+      - name: Save the job database
+        if: success()
+        run: |
+          if sqlite3 jobtracker.db "PRAGMA integrity_check;" | grep -q '^ok$'; then
+            echo "SAVE_DB=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Database corrupt at save time; not caching it."
+            echo "SAVE_DB=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Cache the verified database
+        if: success() && env.SAVE_DB == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: jobtracker.db
+          key: jobtracker-db-${{ github.run_id }}
+
+      - name: Cache run state
+        if: always() && hashFiles('state/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/
+          key: jobtracker-state-${{ github.run_id }}

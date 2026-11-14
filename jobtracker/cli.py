@@ -126,6 +126,9 @@ def _persist_and_poll(session: Session, http, company_id: str, poll: bool) -> No
     config = company_service.config_for_yaml(session, company_id)
     path = append_or_update_yaml(get_settings().companies_file, config)
     typer.echo(f"Persisted {company_id} to {path}.")
+    # Machine-readable line so callers (the add-company workflow) can capture
+    # the resolved slug without parsing prose.
+    typer.echo(f"COMPANY_ID={company_id}")
     if poll:
         summary = ingest_service.run(session, http, company_ids=[company_id])
         typer.echo(
