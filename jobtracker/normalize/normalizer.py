@@ -184,7 +184,11 @@ _CANADIAN_CITIES = {
     "stoney creek", "ayr", "elmira", "fergus", "milton", "newmarket",
     "richmond hill", "aurora", "bécancour", "sept-îles", "trail", "kamloops",
     "kelowna", "prince george", "nanaimo", "lethbridge", "red deer",
-    "medicine hat", "grande prairie", "estevan", "flin flon",
+    "medicine hat", "grande prairie", "estevan", "flin flon", "gaspe", "gaspé",
+    "brossard", "varennes", "la prairie", "pointe-claire",
+    "saint-hubert", "st-laurent", "lachine", "anjou", "terrebonne",
+    "drummondville", "granby", "saint-jérôme", "rimouski", "chicoutimi",
+    "saguenay", "jonquière", "alma", "baie-comeau",
 }
 # Uppercase ISO country codes for other countries (SuccessFactors/Workday emit
 # "Colon, MEX, MX, 76270"). Two-letter codes that collide with US states or
@@ -232,6 +236,20 @@ _US_CITIES = {
     "huntsville", "cape canaveral", "starbase", "mcgregor", "redondo beach",
     "el segundo", "long beach", "fremont", "oakland", "berkeley",
     "ann arbor", "cambridge, ma", "somerville", "waltham", "bedford",
+    "schenectady", "niskayuna", "greenville", "findlay township", "pensacola",
+    "greer", "wilmington", "charleroi", "fort myers", "cedar rapids",
+    "mukilteo", "everett", "renton", "wichita", "fort worth", "san antonio",
+    "tempe", "chandler", "mesa", "boulder", "golden", "pasadena", "torrance",
+    "carlsbad", "san carlos", "redwood city", "hayward", "livermore",
+    "rochester", "albany", "syracuse", "buffalo", "hartford", "stamford",
+    "princeton", "newark", "jersey city", "pittsburg", "dearborn",
+    "auburn hills", "troy", "warren", "grand rapids", "lansing", "toledo",
+    "dayton", "akron", "louisville", "lexington", "memphis", "knoxville",
+    "chattanooga", "birmingham, al", "jacksonville", "fort lauderdale",
+    "west palm beach", "boca raton", "melbourne, fl", "titusville", "omaha",
+    "des moines", "madison", "green bay", "fargo", "boise", "spokane",
+    "tacoma", "anchorage", "honolulu", "albuquerque", "el paso", "tucson",
+    "reno", "provo", "ogden", "colorado springs", "aurora, co",
 }
 _CA_POSTAL_RE = re.compile(r"\b[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d\b")
 _US_ZIP_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b")
@@ -267,6 +285,23 @@ def split_location(location: str) -> tuple[str | None, str | None, str | None]:
     tokens = [part.strip() for part in re.split(r"[,;|]", text) if part.strip()]
     if not tokens:
         return None, None, None
+    # "Wilmington NC USA" / "Charleroi USA" (one token, space separated): peel
+    # trailing country / region words off the last token into their own tokens.
+    last_words = tokens[-1].split()
+    peeled: list[str] = []
+    while len(last_words) > 1:
+        word = last_words[-1]
+        low = word.lower()
+        if (
+            low in _US_COUNTRY_WORDS or low in _CANADA_TOKENS
+            or low in _OTHER_COUNTRIES or word in _OTHER_COUNTRY_CODES
+            or (word.isupper() and (low in _US_STATES or low in _CANADA_PROVINCES))
+        ):
+            peeled.insert(0, last_words.pop())
+        else:
+            break
+    if peeled:
+        tokens = tokens[:-1] + [" ".join(last_words)] + peeled
     lowered = [tok.lower() for tok in tokens]
 
     city: str | None = None

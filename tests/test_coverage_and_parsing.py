@@ -215,3 +215,14 @@ def test_workday_links_get_locale_prefix() -> None:
     assert with_locale("https://boards.greenhouse.io/x/jobs/1") == (
         "https://boards.greenhouse.io/x/jobs/1"
     )
+
+
+def test_split_location_space_separated_country_and_city_only() -> None:
+    from jobtracker.normalize.normalizer import split_location
+
+    assert split_location("Wilmington NC USA") == ("Wilmington", "NC", "United States")
+    assert split_location("Charleroi USA")[2] == "United States"
+    assert split_location("Paris France")[2] == "France"
+    assert split_location("Schenectady")[2] == "United States"
+    assert split_location("Brossard")[2] == "Canada"
+    assert split_location("London")[2] is None
