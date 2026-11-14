@@ -9,6 +9,7 @@ and it must always be a well-formed file, even when empty.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,95 @@ def _job(session: Session, job_id: str, title: str, *, eligible: bool | None) ->
             eligible=eligible,
         )
     )
+
+
+def _dated_job(
+    session: Session,
+    job_id: str,
+    *,
+    posted_at: datetime | None = None,
+    first_seen_at: datetime | None = None,
+) -> None:
+    session.add(
+        Job(
+            job_id=job_id,
+            company_id="acme",
+            source_job_id=job_id,
+            title="Mechanical Engineering Intern",
+            location="Toronto, Ontario, Canada",
+            term_season="spring",
+            duration_months=4,
+            duration_label="4-month",
+            fit_score=90,
+            application_url=f"https://apply.example/{job_id}",
+            source_url=f"https://src.example/{job_id}",
+            description="Design mechanical systems.",
+            status="active",
+            classification="strong_match",
+            eligible=True,
+            posted_at=posted_at,
+            first_seen_at=first_seen_at,
+        )
+    )
+
+
+def test_freshness_cutoff_hides_old_jobs_and_sets_label(session: Session) -> None:
+    _company(session)
+    now = datetime.now(UTC)
+    # Fresh by true posting date (10 days ago) -> kept, label "10".
+    _dated_job(session, "fresh", posted_at=now - timedelta(days=10))
+    # Stale by true posting date (20 days ago) -> hidden.
+    _dated_job(session, "stale", posted_at=now - timedelta(days=20))
+    # No posted_at, but first seen 5 days ago -> fresh, kept.
+    _dated_job(session, "seen-fresh", first_seen_at=now - timedelta(days=5))
+    # No posted_at, first seen 30 days ago -> stale, hidden.
+    _dated_job(session, "seen-stale", first_seen_at=now - timedelta(days=30))
+    # No dates at all -> age indeterminate -> KEPT.
+    _dated_job(session, "unknown")
+    session.flush()
+
+    feed = web_export_service.build_feed(session)
+    by_id = {j["job_id"]: j for j in feed.payload["jobs"]}
+
+    assert "fresh" in by_id
+    assert "seen-fresh" in by_id
+    assert "unknown" in by_id
+    assert "stale" not in by_id
+    assert "seen-stale" not in by_id
+
+    assert by_id["fresh"]["posted_days_ago"] == 10
+    assert by_id["seen-fresh"]["posted_days_ago"] == 5
+    assert by_id["unknown"]["posted_days_ago"] is None
+
+
+def test_freshness_boundary_at_14_days(session: Session) -> None:
+    _company(session)
+    now = datetime.now(UTC)
+    # Exactly 14 days ago is still within the window (<= 14) -> kept.
+    _dated_job(session, "boundary", posted_at=now - timedelta(days=14, hours=-1))
+    # Just past 14 days -> hidden.
+    _dated_job(session, "past", posted_at=now - timedelta(days=14, hours=1))
+    session.flush()
+
+    ids = {j["job_id"] for j in web_export_service.build_feed(session).payload["jobs"]}
+    assert "boundary" in ids
+    assert "past" not in ids
+
+
+def test_posted_days_ago_prefers_true_posting_date(session: Session) -> None:
+    _company(session)
+    now = datetime.now(UTC)
+    # True posting 3 days ago; first seen only 1 day ago (we fetched it late).
+    _dated_job(
+        session,
+        "job",
+        posted_at=now - timedelta(days=3),
+        first_seen_at=now - timedelta(days=1),
+    )
+    session.flush()
+    job = web_export_service.build_feed(session).payload["jobs"][0]
+    # The label reflects the TRUE posting age, not the fetch age.
+    assert job["posted_days_ago"] == 3
 
 
 def test_tracked_count_excludes_stub_companies(session: Session) -> None:

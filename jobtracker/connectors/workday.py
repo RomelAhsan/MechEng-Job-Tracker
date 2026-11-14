@@ -25,6 +25,7 @@ from datetime import datetime
 
 from jobtracker.connectors.base import Connector, RawJob
 from jobtracker.connectors.http import HttpClient
+from jobtracker.normalize.posting_date import parse_relative_posted
 from jobtracker.schemas.company import CompanyConfig
 
 logger = logging.getLogger("jobtracker.connectors.workday")
@@ -268,7 +269,15 @@ class WorkdayConnector(Connector):
         country_name = country.get("descriptor") if isinstance(country, dict) else None
         if country_name and country_name.lower() not in location.lower():
             location = f"{location}, {country_name}" if location else country_name
-        posted_at = _parse_dt(info.get("startDate"))
+        # The TRUE posting date matters for the freshness cutoff and the
+        # "Posted X days ago" label. Workday's detail ``startDate`` is the
+        # absolute posting date when present; otherwise the list posting only
+        # carries a relative "Posted N Days Ago"/"Posted Today"/"Posted
+        # Yesterday" string ("Posted 30+ Days Ago" counts as 30), which we turn
+        # into an absolute date relative to the fetch time.
+        posted_at = _parse_dt(info.get("startDate")) or parse_relative_posted(
+            posting.get("postedOn") or info.get("postedOn")
+        )
 
         merged = {**posting, "_detail": info}
         return RawJob(

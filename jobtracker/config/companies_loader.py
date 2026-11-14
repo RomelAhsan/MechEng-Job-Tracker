@@ -32,6 +32,88 @@ def _read_yaml(path: str | Path) -> object:
         raise ConfigError(f"Could not parse YAML in '{file_path}': {exc}") from exc
 
 
+#: Ordered keys emitted per company entry, matching the existing shape of
+#: ``config/companies.yaml``. Optional provider-specific keys
+#: (tenant/data_center/site/itar_restricted) are appended only when set.
+_BASE_KEYS = (
+    "id",
+    "name",
+    "ats",
+    "board_token",
+    "careers_url",
+    "enabled",
+    "priority",
+    "check_interval_minutes",
+    "locations",
+    "notes",
+)
+_OPTIONAL_KEYS = ("tenant", "data_center", "site", "itar_restricted")
+
+
+def _entry_from_config(config: CompanyConfig) -> dict[str, object]:
+    """Serialize a :class:`CompanyConfig` into the YAML entry shape.
+
+    ``use_enum_values`` means ``ats``/``priority`` are already plain strings.
+    Only non-falsy optional keys are written so existing entries are not
+    bloated with ``tenant: null`` noise.
+    """
+    data = config.model_dump(mode="json")
+    entry: dict[str, object] = {}
+    for key in _BASE_KEYS:
+        entry[key] = data.get(key)
+    for key in _OPTIONAL_KEYS:
+        value = data.get(key)
+        if value:
+            entry[key] = value
+    return entry
+
+
+def append_or_update_yaml(path: str | Path, config: CompanyConfig) -> Path:
+    """Upsert ``config`` into the companies YAML at ``path`` (idempotent).
+
+    Loads the current ``companies:`` list, replaces the entry whose ``id``
+    matches (updating in place rather than duplicating) or appends a new one,
+    validates every resulting entry through :class:`CompanyConfig`, and writes
+    the file back in the existing key shape. Adding the same company twice
+    updates it and never creates a duplicate.
+    """
+    file_path = Path(path)
+    if file_path.exists():
+        data = _read_yaml(file_path)
+        if not isinstance(data, dict) or not isinstance(data.get("companies"), list):
+            raise ConfigError(
+                f"'{file_path}' must contain a top-level 'companies:' list."
+            )
+        companies = [e for e in data["companies"] if isinstance(e, dict)]
+    else:
+        companies = []
+
+    new_entry = _entry_from_config(config)
+    replaced = False
+    for index, entry in enumerate(companies):
+        if entry.get("id") == config.id:
+            companies[index] = new_entry
+            replaced = True
+            break
+    if not replaced:
+        companies.append(new_entry)
+
+    # Validate every entry so a malformed upsert never corrupts the seed file.
+    for entry in companies:
+        CompanyConfig(**entry)
+
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with file_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            {"companies": companies},
+            handle,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=True,
+        )
+    return file_path
+
+
 def load_companies(path: str | Path) -> list[CompanyConfig]:
     """Parse companies YAML and return validated :class:`CompanyConfig` list.
 

@@ -194,3 +194,57 @@ def test_workday_missing_coordinates_returns_empty() -> None:
     company = CompanyConfig(id="acme", name="Acme", ats="workday")
     assert WorkdayConnector(client).fetch(company) == []
     client.close()
+
+
+@respx.mock
+def test_workday_parses_relative_posted_on_for_true_date() -> None:
+    """A posting with only a relative "Posted N Days Ago" string gets a date.
+
+    The detail omits ``startDate`` but the list posting carries ``postedOn``;
+    the connector must turn that into an absolute ``posted_at`` so the 14-day
+    freshness cutoff and the "Posted X days ago" label measure time since the
+    ACTUAL posting, not the fetch time.
+    """
+    from datetime import UTC, datetime
+
+    respx.post(JOBS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "total": 1,
+                "jobPostings": [
+                    {
+                        "title": "Intern, Hardware Development Engineer",
+                        "externalPath": "/job/US-OH/Intern_R26-6892",
+                        "postedOn": "Posted 25 Days Ago",
+                        "bulletFields": ["R26-6892"],
+                    }
+                ],
+            },
+        )
+    )
+    respx.get(
+        f"{CXS}/job/US-OH/Intern_R26-6892"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jobPostingInfo": {
+                    "id": "R26-6892",
+                    "title": "Intern, Hardware Development Engineer",
+                    "jobDescription": "<p>Build hardware.</p>",
+                }
+            },
+        )
+    )
+
+    client = _client()
+    raw_jobs = WorkdayConnector(client).fetch(_company())
+    client.close()
+
+    assert len(raw_jobs) == 1
+    posted = raw_jobs[0].posted_at
+    assert posted is not None
+    # ~25 days ago (allow a day of slack around the test clock).
+    age_days = (datetime.now(UTC) - posted).days
+    assert 24 <= age_days <= 26

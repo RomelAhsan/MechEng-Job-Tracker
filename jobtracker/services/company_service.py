@@ -424,10 +424,12 @@ def add_from_name(
         resolved=False,
         message=(
             f"Could not auto-resolve '{cleaned}' to a public job board "
-            "(Greenhouse / Lever / Ashby / Workable). Many employers (e.g. "
-            "Workday-based ones) need their exact careers URL. Try 'Add a "
-            "company by careers URL' with the board link from the company's "
-            "careers page."
+            "(Greenhouse / Lever / Ashby / Workable). Many employers need their "
+            "exact careers URL: Workday boards, Phenom career sites (e.g. RTX / "
+            "Raytheon at careers.rtx.com), and Oracle Cloud Recruiting sites "
+            "(e.g. Honeywell) all use hosts/site numbers that cannot be guessed "
+            "from a name. Try 'Add a company by careers URL' with the board link "
+            "from the company's careers page."
         ),
         tried=tried,
     )
@@ -540,6 +542,23 @@ def _config_from_company(company: Company) -> CompanyConfig:
         locations=list(company.locations or []),
         notes=company.notes,
     )
+
+
+def config_for_yaml(session: Session, company_id: str) -> CompanyConfig:
+    """Return a full :class:`CompanyConfig` for a stored company, for YAML upsert.
+
+    Includes the ITAR flag and the Workday ``tenant``/``data_center``/``site``
+    identifiers (when present on the row) so the persisted ``companies.yaml``
+    entry carries everything the connectors need.
+    """
+    company = _require(session, company_id)
+    config = _config_from_company(company)
+    config.itar_restricted = bool(getattr(company, "itar_restricted", False))
+    for attr in ("tenant", "data_center", "site"):
+        value = getattr(company, attr, None)
+        if value:
+            setattr(config, attr, value)
+    return config
 
 
 def _slugify(value: str) -> str:

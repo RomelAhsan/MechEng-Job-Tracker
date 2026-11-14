@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -35,9 +35,60 @@ logger = logging.getLogger("jobtracker.services.web_export")
 #: stale/incompatible shape after a future change.
 FEED_VERSION = 1
 
+#: Freshness cutoff: a job older than this is hidden from the eligible feed.
+#: "Older" is measured from the best available date (true posting date first,
+#: then how long it has sat on our page). This is a hard hide (not a toggle);
+#: a job whose age cannot be determined at all is KEPT rather than hidden.
+MAX_AGE = timedelta(days=14)
+
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _as_aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def best_posted_date(view: JobView) -> datetime | None:
+    """Best available date for freshness, in priority order.
+
+    (1) the TRUE posting date from the source (``posted_at``), else
+    (2) how long the posting has sat on our page (``first_seen_at``). Returns
+    ``None`` when neither is known (age is then indeterminate).
+    """
+    for value in (view.posted_at, view.first_seen_at):
+        if value is not None:
+            return _as_aware(value)
+    return None
+
+
+def posted_days_ago(view: JobView, *, now: datetime | None = None) -> int | None:
+    """Whole days since the best-available posting date (>= 0), or ``None``.
+
+    Used both for the freshness cutoff and the "Posted X days ago" label on
+    every card. Prefers the true posting date over the fetch time, matching the
+    user's request to measure time since the ACTUAL posting.
+    """
+    date = best_posted_date(view)
+    if date is None:
+        return None
+    now = now or datetime.now(UTC)
+    days = (now - date).days
+    return days if days > 0 else 0
+
+
+def is_fresh(view: JobView, *, now: datetime | None = None) -> bool:
+    """True when a job is within the freshness window (or its age is unknown).
+
+    A job older than :data:`MAX_AGE` by its best-available date is stale and
+    hidden. A job with no determinable date is KEPT (age indeterminate).
+    """
+    date = best_posted_date(view)
+    if date is None:
+        return True
+    now = now or datetime.now(UTC)
+    return now - date <= MAX_AGE
 
 
 #: SPEC fields of a cached AI analysis that we surface as "eligibility
@@ -94,6 +145,7 @@ def _job_to_dict(view: JobView, ai_result: dict | None) -> dict[str, object]:
         "application_url": view.application_url,
         "source_url": view.source_url,
         "posted_at": _iso(view.posted_at),
+        "posted_days_ago": posted_days_ago(view),
         "first_seen_at": _iso(view.first_seen_at),
         "first_seen_ago": view.first_seen_ago,
         "source_last_checked_at": _iso(view.source_last_checked_at),
@@ -134,8 +186,13 @@ def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
 
     views = dashboard_service.list_relevant_jobs(session, user_id=user_id)
 
+    # Freshness cutoff: hide (do not delete) any job older than MAX_AGE by its
+    # best-available date. A job whose age cannot be determined is kept.
+    now = datetime.now(UTC)
+    fresh_views = [v for v in views if is_fresh(v, now=now)]
+
     jobs: list[dict[str, object]] = []
-    for v in views:
+    for v in fresh_views:
         cached = ai_service.get_cached(session, v.job_id, user_id=user_id)
         jobs.append(_job_to_dict(v, cached.result if cached else None))
 
