@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     #: answers in under a second and gave the same eligible/not verdict as
     #: gemini-3.5-flash on every job tested, so it is the default.
     gemini_model: str = "gemini-3.5-flash-lite"
+    #: Second-opinion model (env: GEMINI_VERIFY_MODEL). An AMBIGUOUS job the
+    #: primary model calls eligible is shown only after this model agrees.
+    #: Measured on the live survivor set, each model caught errors the other
+    #: missed, so requiring both removes them. Only primary-eligible jobs are
+    #: re-checked (a few requests/day, within the ~20/day flash free tier).
+    #: Empty string disables the second opinion.
+    gemini_verify_model: str = "gemini-3.5-flash"
     #: Seconds to sleep BETWEEN provider calls in the bulk AI pass, to stay
     #: under the Gemini free-tier per-minute request limit. Tests pass
     #: delay_seconds=0.

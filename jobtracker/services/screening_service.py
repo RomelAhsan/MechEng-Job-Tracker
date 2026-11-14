@@ -21,6 +21,11 @@ from jobtracker.db.models import Company, Job
 from jobtracker.extract.degree_experience import extract_degree_experience
 from jobtracker.extract.term import extract_term
 from jobtracker.extract.work_auth import extract_work_auth
+from jobtracker.normalize.normalizer import (
+    infer_employment_type,
+    infer_remote_status,
+    split_location,
+)
 from jobtracker.schemas.job import CanonicalJob
 from jobtracker.schemas.user_profile import UserProfile
 from jobtracker.screen.eligibility import compute_stage1_eligibility
@@ -76,6 +81,17 @@ def screen_job(
     title = job.title or ""
     description = job.description or ""
 
+    # Re-derive the fields the normalizer computed at ingest time, from the
+    # stored text. Jobs whose description never changes are never re-normalized,
+    # so without this a parser fix (e.g. "Hawthorne, CA" = California, not
+    # Canada) would never reach jobs already in the database -- which is how
+    # US SpaceX roles kept showing as Canadian.
+    city, province_state, country = split_location(job.location or "")
+    if country is not None:
+        job.city, job.province_state, job.country = city, province_state, country
+    job.employment_type = infer_employment_type(title, description, None).value
+    job.remote_status = infer_remote_status(title, description).value
+
     # Mechanical relevance.
     classification = classify(title, description)
     job.classification = classification.classification.value
@@ -83,8 +99,9 @@ def screen_job(
     job.classification_confidence = classification.classification_confidence
 
     # Term / duration.
-    term = extract_term(title, description)
-    job.term_season = term.term_season.value
+    term = extract_term(title, description, country=job.country)
+    # Comma-joined canonical terms ("spring" or "winter,spring").
+    job.term_season = term.stored_value
     job.term_start_date = term.term_start_date
     job.term_end_date = term.term_end_date
     job.duration_months = term.duration_months
@@ -127,6 +144,7 @@ def screen_job(
     job.eligibility_reasons = list(verdict.reasons)
     job.eligibility_evidence = list(verdict.evidence)
     job.eligibility_failed_rules = list(verdict.failed_rules)
+    job.screening_tier = verdict.tier
 
 
 def screen_jobs(

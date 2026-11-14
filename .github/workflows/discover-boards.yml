@@ -1,0 +1,26 @@
+# Manual helper: find public Workday boards and check Workday job links from a
+# GitHub runner (some Workday data centers refuse the build sandbox). Writes
+# output/discovery.json as an artifact. Read-only: it changes nothing.
+name: Discover job boards
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install httpx
+      - run: python scripts/discover_boards.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discovery
+          path: output/discovery.json

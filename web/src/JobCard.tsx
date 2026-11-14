@@ -1,4 +1,4 @@
-import type { AiReasoning, Job } from "./types";
+import { TERM_LABELS, termsOf, type AiReasoning, type Job } from "./types";
 
 const REPO = "RomelAhsan/MechEng-Job-Tracker";
 
@@ -112,7 +112,10 @@ export function JobCard({ job }: { job: Job }) {
         </div>
         <div>
           <dt>Term</dt>
-          <dd>{job.term_season}</dd>
+          <dd>
+            {termsOf(job.term_season).map((t) => TERM_LABELS[t] ?? t).join(" or ") ||
+              "not stated"}
+          </dd>
         </div>
         <div>
           <dt>Duration</dt>

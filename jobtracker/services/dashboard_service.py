@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.db.models import Company, Job, QuarantineItem, SourceHealth
+from jobtracker.extract.term import term_set
 from jobtracker.extract.work_auth import INELIGIBLE_ITAR
 
 #: Classifications surfaced on the "Relevant For Me" page.
@@ -285,7 +286,7 @@ def _matches(view: JobView, filters: JobFilters, *, now: datetime) -> bool:
     f = filters
     if f.classifications and view.classification not in f.classifications:
         return False
-    if f.term_seasons and view.term_season not in f.term_seasons:
+    if f.term_seasons and not (term_set(view.term_season) & set(f.term_seasons)):
         return False
     if f.countries and (view.country or "") not in f.countries:
         return False
@@ -506,18 +507,62 @@ def list_relevant_jobs(
     from jobtracker.screen.ai_verdict import ai_eligibility
     from jobtracker.services import ai_service
 
+    needs_second_opinion = ai_service.verification_enabled()
+
     def verdict_lookup(job_id: str) -> bool | None:
-        cached = ai_service.get_cached(
+        result, is_current = ai_service.latest_verdict(
             session, job_id, user_id=user_id
         )
-        if cached is None or not cached.available or not cached.result:
+        if not result:
             return None
-        return ai_eligibility(cached.result)
+        if not ai_eligibility(result):
+            return False  # any AI "not eligible", even under older rules
+        if not is_current:
+            return None  # old "eligible" must be redone
+        if needs_second_opinion and not result.get("_manual") and (
+            not ai_service.has_current_verification(result)
+        ):
+            return None  # waiting for the second model to agree
+        return True
 
+    ids = [v.job_id for v in survivors]
+    tiers = dict(
+        session.execute(
+            select(Job.job_id, Job.screening_tier).where(Job.job_id.in_(ids))
+        ).all()
+    ) if ids else {}
+    from jobtracker.settings import get_settings
+
+    strict = bool((get_settings().gemini_api_key or "").strip())
     kept_ids = set(
-        apply_ai_eligibility_gate([v.job_id for v in survivors], verdict_lookup)
+        apply_ai_eligibility_gate(
+            ids, verdict_lookup, tier_lookup=tiers.get, strict=strict
+        )
     )
     return [v for v in survivors if v.job_id in kept_ids]
+
+
+def pending_ai_count(session: Session) -> int:
+    """Stage-1 survivors that still need the AI's confirmation (not yet shown)."""
+    from jobtracker.screen.ai_verdict import ai_eligibility
+    from jobtracker.services import ai_service
+
+    needs_second_opinion = ai_service.verification_enabled()
+    count = 0
+    for job_id in stage1_survivor_ids(session):
+        job = session.get(Job, job_id)
+        if job is None or (job.screening_tier or "ai") != "ai":
+            continue
+        result, is_current = ai_service.latest_verdict(session, job_id)
+        if not result or not is_current:
+            count += 1
+        elif (
+            needs_second_opinion
+            and ai_eligibility(result)
+            and not ai_service.has_current_verification(result)
+        ):
+            count += 1
+    return count
 
 
 def list_saved_job_views(
@@ -556,7 +601,8 @@ def filter_options(session: Session) -> FilterOptions:
             continue
         if job.classification:
             seen["classifications"].add(job.classification)
-        seen["term_seasons"].add(job.term_season or "unknown")
+        for _term in term_set(job.term_season) or {"unknown"}:
+            seen["term_seasons"].add(_term)
         if job.country:
             seen["countries"].add(job.country)
         seen["remote_statuses"].add(job.remote_status or "unknown")
@@ -612,6 +658,9 @@ def stage1_survivor_ids(
 def apply_ai_eligibility_gate(
     job_ids: list[str],
     verdict_lookup,
+    *,
+    tier_lookup=None,
+    strict: bool = False,
 ) -> list[str]:
     """Pure Stage-2 post-filter over Stage-1 survivor ids with a never-empty fallback.
 
@@ -626,12 +675,29 @@ def apply_ai_eligibility_gate(
       labeled).
 
     Taking an injected lookup keeps this unit-testable without a real provider.
+
+    Screening tiers (when ``tier_lookup`` is given):
+
+    * ``"auto"`` -- level-1 intern/co-op role in Canada that passed every hard
+      rule. KEPT without consulting the AI (the AI is not needed for it).
+    * ``"ai"`` (or no tier yet) -- ambiguous. With ``strict`` (an AI key is
+      configured) it is shown ONLY once the AI has confirmed it eligible, so an
+      unconfirmed ambiguous job never appears. Without a key the old
+      never-empty fallback applies.
     """
     kept: list[str] = []
     for job_id in job_ids:
+        tier = tier_lookup(job_id) if tier_lookup else None
         verdict = verdict_lookup(job_id)
+        if tier == "auto":
+            # Level 1 needs no AI; but if the AI ever did flag it, respect that.
+            if verdict is not False:
+                kept.append(job_id)
+            continue
         if verdict is False:
             continue
+        if verdict is None and strict and tier_lookup is not None:
+            continue  # awaiting AI confirmation
         kept.append(job_id)
     return kept
 

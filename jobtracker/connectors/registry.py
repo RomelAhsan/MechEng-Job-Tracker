@@ -15,6 +15,7 @@ from jobtracker.connectors.greenhouse import GreenhouseConnector
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.lever import LeverConnector
 from jobtracker.connectors.smartrecruiters import SmartRecruitersConnector
+from jobtracker.connectors.successfactors import SuccessFactorsConnector
 from jobtracker.connectors.workable import WorkableConnector, parse_workable_account
 from jobtracker.connectors.workday import WorkdayConnector, parse_workday_url
 from jobtracker.schemas.company import ATSType
@@ -27,6 +28,7 @@ _SUPPORTED: dict[str, type[Connector]] = {
     ATSType.SMARTRECRUITERS.value: SmartRecruitersConnector,
     ATSType.WORKDAY.value: WorkdayConnector,
     ATSType.WORKABLE.value: WorkableConnector,
+    ATSType.SUCCESSFACTORS.value: SuccessFactorsConnector,
     ATSType.RSS.value: RssConnector,
     ATSType.SITEMAP.value: SitemapConnector,
     ATSType.JSON_LD.value: JsonLdConnector,

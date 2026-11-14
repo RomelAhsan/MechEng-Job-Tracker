@@ -163,7 +163,7 @@ class GeminiProvider(AIProvider):
         from google.genai import errors, types
 
         config = types.GenerateContentConfig(
-            temperature=0.2,
+            temperature=0.0,
             response_mime_type="application/json",
         )
         try:

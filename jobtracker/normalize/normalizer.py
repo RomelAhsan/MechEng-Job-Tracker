@@ -90,9 +90,17 @@ _REMOTE_RE = re.compile(r"\bremote\b", re.IGNORECASE)
 _HYBRID_RE = re.compile(r"\bhybrid\b", re.IGNORECASE)
 _ONSITE_RE = re.compile(r"\b(on-?site|in-?office|in-?person)\b", re.IGNORECASE)
 
-_COOP_RE = re.compile(r"\bco-?op\b", re.IGNORECASE)
-_INTERN_RE = re.compile(r"\bintern(ship)?\b", re.IGNORECASE)
-_NEWGRAD_RE = re.compile(r"\bnew\s*grad(uate)?\b", re.IGNORECASE)
+_COOP_RE = re.compile(r"\bco-?ops?\b|\bcoop\b|\bwork\s+term\b", re.IGNORECASE)
+_INTERN_RE = re.compile(
+    r"\bintern(?:s|ship|ships)?\b|\bstagiaire\b|\bsummer\s+student\b",
+    re.IGNORECASE,
+)
+_NEWGRAD_RE = re.compile(
+    r"\b(?:new|recent)\s*grad(?:uate)?s?\b|\bgraduate\s+(?:engineer|program|"
+    r"rotation(?:al)?|development\s+program|trainee)\b|\bengineer[-\s]in[-\s]"
+    r"training\b|\bEIT\b|\buniversity\s+graduate\b|\bnouveaux?\s+diplôm",
+    re.IGNORECASE,
+)
 _FULLTIME_RE = re.compile(r"\bfull[-\s]?time\b", re.IGNORECASE)
 
 _SECTION_HEADINGS = {
@@ -120,51 +128,205 @@ class QuarantineError(ValueError):
         self.reason = reason
 
 
+_US_STATE_NAMES = {
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+    "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
+    "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey",
+    "new mexico", "new york", "north carolina", "north dakota", "ohio",
+    "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
+    "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
+    "washington", "west virginia", "wisconsin", "wyoming",
+}
+_US_COUNTRY_WORDS = {
+    "united states", "united states of america", "usa", "us", "u.s.", "u.s.a.",
+    "america",
+}
+# Other countries we recognise. A role located in one of these needs that
+# country's work authorization, which the Canadian-citizen profile lacks.
+_OTHER_COUNTRIES = {
+    "united kingdom": "United Kingdom", "uk": "United Kingdom",
+    "england": "United Kingdom", "scotland": "United Kingdom",
+    "ireland": "Ireland", "france": "France", "germany": "Germany",
+    "spain": "Spain", "italy": "Italy", "netherlands": "Netherlands",
+    "belgium": "Belgium", "switzerland": "Switzerland", "sweden": "Sweden",
+    "norway": "Norway", "denmark": "Denmark", "finland": "Finland",
+    "poland": "Poland", "czech republic": "Czech Republic", "austria": "Austria",
+    "portugal": "Portugal", "romania": "Romania", "hungary": "Hungary",
+    "mexico": "Mexico", "brazil": "Brazil", "chile": "Chile", "peru": "Peru",
+    "argentina": "Argentina", "colombia": "Colombia", "india": "India",
+    "china": "China", "japan": "Japan", "south korea": "South Korea",
+    "korea": "South Korea", "singapore": "Singapore", "malaysia": "Malaysia",
+    "philippines": "Philippines", "indonesia": "Indonesia",
+    "australia": "Australia", "new zealand": "New Zealand",
+    "south africa": "South Africa", "united arab emirates": "United Arab Emirates",
+    "uae": "United Arab Emirates", "saudi arabia": "Saudi Arabia",
+    "qatar": "Qatar", "israel": "Israel", "turkey": "Turkey", "egypt": "Egypt",
+    "morocco": "Morocco", "taiwan": "Taiwan", "vietnam": "Vietnam",
+    "thailand": "Thailand", "mongolia": "Mongolia",
+}
+# Unambiguous Canadian cities (Workday often gives only a city). Deliberately
+# excludes names shared with large non-Canadian places (London, Cambridge,
+# Windsor, Kingston, Hamilton, Richmond, Victoria, Waterloo-Iowa is rare).
+_CANADIAN_CITIES = {
+    "toronto", "mississauga", "markham", "ottawa", "montreal", "montréal",
+    "kitchener", "waterloo", "guelph", "oshawa", "pickering", "ajax", "whitby",
+    "clarington", "calgary", "edmonton", "vancouver", "burnaby", "surrey",
+    "winnipeg", "halifax", "dartmouth", "quebec city", "québec", "laval",
+    "longueuil", "saskatoon", "regina", "burlington", "oakville", "brampton",
+    "vaughan", "concord", "saint-laurent", "dorval", "mirabel", "boisbriand",
+    "bromont", "peterborough", "sarnia", "fort mcmurray", "sudbury",
+    "thunder bay", "kincardine", "tiverton", "renfrew", "chalk river",
+    "brantford", "st. catharines", "barrie", "moncton", "fredericton",
+    "st. john's", "saint john", "trois-rivières", "sherbrooke", "gatineau",
+    "kanata", "north york", "scarborough", "etobicoke", "woodbridge", "bolton",
+    "stoney creek", "ayr", "elmira", "fergus", "milton", "newmarket",
+    "richmond hill", "aurora", "bécancour", "sept-îles", "trail", "kamloops",
+    "kelowna", "prince george", "nanaimo", "lethbridge", "red deer",
+    "medicine hat", "grande prairie", "estevan", "flin flon",
+}
+# Uppercase ISO country codes for other countries (SuccessFactors/Workday emit
+# "Colon, MEX, MX, 76270"). Two-letter codes that collide with US states or
+# Canadian provinces (IN, DE, CO, ID, IL, ...) are deliberately left out.
+_OTHER_COUNTRY_CODES = {
+    "MX": "Mexico", "MEX": "Mexico", "GB": "United Kingdom",
+    "GBR": "United Kingdom", "FR": "France", "FRA": "France", "DEU": "Germany",
+    "ES": "Spain", "ESP": "Spain", "IT": "Italy", "ITA": "Italy",
+    "NL": "Netherlands", "NLD": "Netherlands", "BE": "Belgium",
+    "BEL": "Belgium", "CH": "Switzerland", "CHE": "Switzerland",
+    "SE": "Sweden", "SWE": "Sweden", "NO": "Norway", "NOR": "Norway",
+    "DK": "Denmark", "DNK": "Denmark", "FI": "Finland", "FIN": "Finland",
+    "PL": "Poland", "POL": "Poland", "CZ": "Czech Republic",
+    "CZE": "Czech Republic", "AT": "Austria", "AUT": "Austria",
+    "PT": "Portugal", "PRT": "Portugal", "RO": "Romania", "ROU": "Romania",
+    "HU": "Hungary", "HUN": "Hungary", "IE": "Ireland", "IRL": "Ireland",
+    "BR": "Brazil", "BRA": "Brazil", "CL": "Chile", "CHL": "Chile",
+    "PE": "Peru", "PER": "Peru", "AR": "Argentina", "ARG": "Argentina",
+    "COL": "Colombia", "IND": "India", "CN": "China", "CHN": "China",
+    "JP": "Japan", "JPN": "Japan", "KR": "South Korea", "KOR": "South Korea",
+    "SG": "Singapore", "SGP": "Singapore", "MY": "Malaysia", "MYS": "Malaysia",
+    "PH": "Philippines", "PHL": "Philippines", "IDN": "Indonesia",
+    "AU": "Australia", "AUS": "Australia", "NZ": "New Zealand",
+    "NZL": "New Zealand", "ZA": "South Africa", "ZAF": "South Africa",
+    "AE": "United Arab Emirates", "ARE": "United Arab Emirates",
+    "SAU": "Saudi Arabia", "QA": "Qatar", "QAT": "Qatar", "ISR": "Israel",
+    "TR": "Turkey", "TUR": "Turkey", "EG": "Egypt", "EGY": "Egypt",
+    "TW": "Taiwan", "TWN": "Taiwan", "VN": "Vietnam", "VNM": "Vietnam",
+    "TH": "Thailand", "THA": "Thailand", "MN": None, "MNG": "Mongolia",
+}
+_OTHER_COUNTRY_CODES = {k: v for k, v in _OTHER_COUNTRY_CODES.items() if v}
+# Large US cities that boards list without a state ("Pittsburgh",
+# "New York City"). Names shared with Canadian cities are excluded.
+_US_CITIES = {
+    "new york", "new york city", "nyc", "brooklyn", "manhattan",
+    "los angeles", "san francisco", "san jose", "san diego", "seattle",
+    "boston", "chicago", "pittsburgh", "detroit", "houston", "austin",
+    "dallas", "denver", "phoenix", "atlanta", "miami", "philadelphia",
+    "washington dc", "washington, d.c.", "minneapolis", "cleveland",
+    "cincinnati", "columbus", "indianapolis", "nashville", "charlotte",
+    "raleigh", "salt lake city", "las vegas", "portland", "baltimore",
+    "st. louis", "kansas city", "milwaukee", "sacramento", "palo alto",
+    "mountain view", "sunnyvale", "santa clara", "redmond", "hawthorne",
+    "foster city", "menlo park", "cupertino", "irvine", "orlando", "tampa",
+    "huntsville", "cape canaveral", "starbase", "mcgregor", "redondo beach",
+    "el segundo", "long beach", "fremont", "oakland", "berkeley",
+    "ann arbor", "cambridge, ma", "somerville", "waltham", "bedford",
+}
+_CA_POSTAL_RE = re.compile(r"\b[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d\b")
+_US_ZIP_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b")
+# Workday-style compact codes: "CA-ON-Toronto", "US-TX-Austin", "CAN-ON-...".
+_COMPACT_RE = re.compile(r"^(CA|CAN|US|USA)[-\s]+([A-Z]{2})[-\s]+(.+)$")
+
+
 def split_location(location: str) -> tuple[str | None, str | None, str | None]:
-    """Split a free-form location into (city, province_state, country)."""
+    """Split a free-form location into ``(city, province_state, country)``.
+
+    Handles the formats the connected boards actually emit:
+
+    * ``"Hawthorne, CA"`` -- "CA" is the US state California (SpaceX HQ).
+    * ``"Renfrew, ON, CA, K7V 0C2"`` -- SuccessFactors uses "CA" as the
+      COUNTRY CODE for Canada after a Canadian province.
+    * ``"Nashville, TN, US"``, ``"Toronto, Ontario, Canada"``,
+      ``"CA-ON-Toronto"``, ``"Markham"`` (city only),
+      ``"Dallas, United States of America"`` (Workday + detail country).
+
+    Priority: an explicit country word wins; otherwise a Canadian province
+    (or postal code) means Canada, and only then does a US state code mean the
+    United States. Never guesses: unknown stays ``None``.
+    """
     if not location:
         return None, None, None
-    tokens = [part.strip() for part in location.split(",") if part.strip()]
+    text = location.strip()
+    compact = _COMPACT_RE.match(text)
+    if compact:
+        cc, region, rest = compact.groups()
+        country = "Canada" if cc in ("CA", "CAN") else "United States"
+        return rest.strip() or None, region, country
+
+    tokens = [part.strip() for part in re.split(r"[,;|]", text) if part.strip()]
     if not tokens:
         return None, None, None
+    lowered = [tok.lower() for tok in tokens]
 
     city: str | None = None
     province_state: str | None = None
     country: str | None = None
 
-    lowered = [tok.lower() for tok in tokens]
-
-    # Country detection from any token. Only the full word "canada" / explicit
-    # US tokens decide the country here; bare two-letter codes are resolved as
-    # provinces/states below (where "CA" correctly maps to California, a US
-    # state, NOT Canada).
+    # 1) Explicit country words.
     for low in lowered:
         if low in _CANADA_TOKENS:
             country = "Canada"
-        elif low in _US_TOKENS:
-            country = "United States"
+        elif low in _US_COUNTRY_WORDS:
+            country = country or "United States"
+        elif low in _OTHER_COUNTRIES:
+            country = country or _OTHER_COUNTRIES[low]
+    for raw in tokens:
+        if raw in _OTHER_COUNTRY_CODES and country is None:
+            country = _OTHER_COUNTRY_CODES[raw]
 
-    # Province/state detection. A two-letter code is ambiguous between a Canada
-    # province and a US state ("CA" is both a (removed) Canada alias and the US
-    # state California). We resolve US states FIRST so "CA"/"ON"-style codes map
-    # to their US-state meaning when they collide, and only treat a code as a
-    # Canadian province when it is NOT also a US state abbreviation. (The only
-    # real collision is "CA"; Canadian province codes like ON/QC/BC/AB are not
-    # US states, so they still resolve to Canada correctly.)
-    for raw, low in zip(tokens, lowered, strict=True):
-        if low in _US_STATES and raw.upper() == raw:
-            province_state = raw.upper()
-            if country is None:
-                country = "United States"
-        elif low in _CANADA_PROVINCES:
-            province_state = _CANADA_PROVINCES[low]
-            if country is None:
-                country = "Canada"
+    # 2) Canadian province (full name or code). ON/QC/BC/AB/... are not US
+    #    state codes, so they are unambiguous; once one is present a bare "CA"
+    #    token is the Canada country code, not California.
+    canadian_province = next(
+        (_CANADA_PROVINCES[low] for low in lowered if low in _CANADA_PROVINCES),
+        None,
+    )
+    if canadian_province:
+        province_state = canadian_province
+        if country is None or (country == "United States" and "ca" in lowered):
+            country = "Canada"
 
-    # City is the first token that is not a province/state/country marker.
-    markers = _CANADA_TOKENS | _US_TOKENS | set(_CANADA_PROVINCES) | _US_STATES
+    # 3) US state code / name (only when no Canadian province was found).
+    if province_state is None:
+        for raw, low in zip(tokens, lowered, strict=True):
+            if (low in _US_STATES and raw.upper() == raw) or low in _US_STATE_NAMES:
+                province_state = raw.upper() if len(raw) == 2 else raw
+                country = country or "United States"
+                break
+
+    # 4) Postal codes, then unambiguous Canadian city names.
+    if country is None and _CA_POSTAL_RE.search(text):
+        country = "Canada"
+    if country is None and _US_ZIP_RE.search(text):
+        country = "United States"
+    if country is None and any(low in _CANADIAN_CITIES for low in lowered):
+        country = "Canada"
+    if country is None and (
+        any(low in _US_CITIES for low in lowered) or text.lower() in _US_CITIES
+    ):
+        country = "United States"
+
+    # City: first token that is not a region/country/postal marker.
+    markers = (
+        _CANADA_TOKENS | _US_COUNTRY_WORDS | set(_CANADA_PROVINCES) | _US_STATES
+        | _US_STATE_NAMES | set(_OTHER_COUNTRIES)
+        | {code.lower() for code in _OTHER_COUNTRY_CODES}
+    )
     for raw, low in zip(tokens, lowered, strict=True):
-        if low not in markers:
+        if low not in markers and not _CA_POSTAL_RE.fullmatch(raw) and not (
+            _US_ZIP_RE.fullmatch(raw)
+        ):
             city = raw
             break
 

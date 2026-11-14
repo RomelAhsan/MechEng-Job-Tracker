@@ -83,9 +83,25 @@ def ai_eligibility(result: dict) -> bool:
     if not result:
         return True
 
+    verify = result.get("_verify")
+    if isinstance(verify, dict) and verify.get("eligible") is False:
+        return False  # the second-opinion model found a disqualifier
+    failed_rules = result.get("failed_rules")
+    if isinstance(failed_rules, list) and any(
+        str(rule).strip() for rule in failed_rules
+    ):
+        return False
+    explicit = result.get("eligible")
+    if explicit is False or str(explicit).strip().lower() == "false":
+        return False
     recommendation = str(result.get("recommendation", "")).strip().lower()
     if recommendation == "skip":
         return False
+    # Under the current rules the model gives a definite answer. A "maybe"
+    # WITH an explicit eligible flag is decided by that flag; a bare "maybe"
+    # (older analyses) keeps the previous behaviour below.
+    if recommendation == "maybe" and explicit is True:
+        return True
 
     for field in _BLOCKING_ASSESSMENT_FIELDS:
         if _assessment_is_negative(result.get(field)):

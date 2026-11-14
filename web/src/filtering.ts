@@ -6,7 +6,7 @@
 // term/min-fit/only-new) and sort that make the page feel instant. Kept pure
 // so it is trivially unit-testable.
 
-import type { Filters, Job, SortKey } from "./types";
+import { termsOf, type Filters, type Job, type SortKey } from "./types";
 
 function matches(job: Job, f: Filters): boolean {
   if (f.search.trim()) {
@@ -16,7 +16,11 @@ function matches(job: Job, f: Filters): boolean {
   }
   if (f.company && job.company !== f.company) return false;
   if (f.remote && job.remote_status !== f.remote) return false;
-  if (f.term && job.term_season !== f.term) return false;
+  if (f.term) {
+    const terms = termsOf(job.term_season);
+    const ok = f.term === "unknown" ? terms.length === 0 : terms.includes(f.term);
+    if (!ok) return false;
+  }
   if ((job.fit_score ?? 0) < f.minFit) return false;
   if (f.freshnessHours > 0 && !withinHours(job, f.freshnessHours)) return false;
   return true;
@@ -47,9 +51,18 @@ export function applyFilters(jobs: Job[], f: Filters): Job[] {
   return jobs.filter((j) => matches(j, f)).sort((a, b) => compare(a, b, f.sort));
 }
 
-/** Distinct, sorted company names present in the feed (for the dropdown). */
+/** Every company that has at least one job on the page, A-Z. */
 export function companyOptions(jobs: Job[]): string[] {
-  return Array.from(new Set(jobs.map((j) => j.company).filter(Boolean))).sort();
+  return Array.from(new Set(jobs.map((j) => j.company).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b),
+  );
+}
+
+/** Number of jobs on the page per company (shown in the dropdown). */
+export function companyCounts(jobs: Job[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const j of jobs) counts[j.company] = (counts[j.company] ?? 0) + 1;
+  return counts;
 }
 
 // Term options come from the fixed SPEC set (spring/summer/winter), NOT from

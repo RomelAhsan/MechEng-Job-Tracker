@@ -87,6 +87,22 @@ describe("applyFilters", () => {
   });
 });
 
+describe("term filter", () => {
+  it("matches a posting that covers several terms", () => {
+    const jobs = [
+      job({ job_id: "both", term_season: "winter,spring" }),
+      job({ job_id: "w", term_season: "winter" }),
+      job({ job_id: "u", term_season: "unknown" }),
+    ];
+    const spring = applyFilters(jobs, { ...DEFAULT_FILTERS, term: "spring" });
+    expect(spring.map((j) => j.job_id)).toEqual(["both"]);
+    const winter = applyFilters(jobs, { ...DEFAULT_FILTERS, term: "winter" });
+    expect(winter.map((j) => j.job_id).sort()).toEqual(["both", "w"]);
+    const unstated = applyFilters(jobs, { ...DEFAULT_FILTERS, term: "unknown" });
+    expect(unstated.map((j) => j.job_id)).toEqual(["u"]);
+  });
+});
+
 describe("companyOptions", () => {
   it("returns distinct, sorted company names", () => {
     const jobs = [job({ job_id: "1", company: "Zoox" }), job({ job_id: "2", company: "Figure" }), job({ job_id: "3", company: "Figure" })];

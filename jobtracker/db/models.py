@@ -126,6 +126,9 @@ class Job(Base):
     # persisted outputs of the degree_experience extractor used by the verdict
     # and surfaced in the UI.
     eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    #: Which screening level decided the job: "auto" (level-1 intern/co-op in
+    #: Canada, no AI needed) or "ai" (ambiguous; shown once the AI confirms).
+    screening_tier: Mapped[str | None] = mapped_column(String, nullable=True)
     eligibility_reasons: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
     eligibility_evidence: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)
     eligibility_failed_rules: Mapped[list | None] = mapped_column(SA_JSON, nullable=True)

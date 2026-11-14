@@ -401,3 +401,22 @@ def test_prompt_never_contains_raw_html() -> None:
     assert "Design mechanical systems" in prompt
     for tag in ("<div", "<p>", "<span", "<br", "</"):
         assert tag not in prompt
+
+
+def test_stale_prompt_version_is_reanalyzed_in_place(session: Session) -> None:
+    """A newer prompt re-analyzes and UPDATES the old row (no unique-key crash)."""
+    _seed_job(session)
+    provider = MockProvider(json.dumps(VALID_RESULT))
+    ai_service.analyze_job(session, "job-1", provider=provider, settings=_settings())
+    row = session.query(AiAnalysisCache).one()
+    row.result = {**row.result, "_prompt_version": -1}
+    session.flush()
+
+    again = ai_service.analyze_job(
+        session, "job-1", provider=provider, settings=_settings()
+    )
+    assert again.cache_hit is False
+    assert provider.calls == 2
+    rows = session.query(AiAnalysisCache).all()
+    assert len(rows) == 1
+    assert rows[0].result["_prompt_version"] == ai_service.PROMPT_VERSION

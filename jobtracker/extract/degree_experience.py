@@ -63,6 +63,52 @@ _BACHELOR_REQUIRED_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A degree listed as a QUALIFICATION ("Bachelor's degree in mechanical
+# engineering", "BS in Aerospace", "B.Eng. or equivalent"), the way full-time
+# postings state it. Only counts when the nearby text does NOT say the
+# candidate is still studying (checked in a local window, see
+# ``_degree_qualification``), so "Currently pursuing a Bachelor's degree in
+# ..." on an internship is NOT a hit.
+_DEGREE_QUAL_RE = re.compile(
+    r"\b(?:bachelor'?s?|baccalaur[ée]at|b\.\s?s\.?c?\.?|bs|bsc|b\.?\s?eng\.?|"
+    r"b\.?\s?a\.?\s?sc\.?)(?:\s+(?:degree|diploma))?\s+(?:in|of|from)\b"
+    r"|\b(?:university|undergraduate|4-year|four-year|engineering)\s+"
+    r"(?:degree|diploma)\s+(?:in|of|from)\b"
+    r"|\bdegree\s+in\s+(?:mechanical|aerospace|electrical|chemical|civil|"
+    r"industrial|manufacturing|materials|nuclear|mechatronics|engineering)",
+    re.IGNORECASE,
+)
+_STILL_STUDYING_RE = re.compile(
+    r"pursu|enrol|working\s+toward|currently|student|candidate\s+for|"
+    r"complet(?:ing|ion\s+of)|in\s+progress|toward|studying|year\s+of|"
+    r"expected|undergrad(?:uate)?\s+(?:student|program)|returning|program\b|"
+    r"co-?op|intern|towards|attend",
+    re.IGNORECASE,
+)
+# An advanced-degree STUDENT role in the title ("PhD Intern", "Master's Co-op",
+# "Graduate Student Researcher", "MBA Intern") -- a first-year undergrad is not
+# eligible for these.
+_ADVANCED_TITLE_RE = re.compile(
+    r"\b(?:ph\.?\s?d|doctoral|master'?s|m\.?\s?sc|m\.?\s?eng|mba|"
+    r"graduate\s+(?:student|intern|co-?op|research))\b",
+    re.IGNORECASE,
+)
+
+
+def _degree_qualification(text: str) -> str | None:
+    """Return the matched quote if a completed degree is listed as required."""
+    for match in _DEGREE_QUAL_RE.finditer(text):
+        window = text[max(0, match.start() - 90) : match.end() + 60]
+        if _STILL_STUDYING_RE.search(window):
+            continue
+        # "preferred"/"nice to have" degree lines are not hard requirements.
+        tail = text[match.end() : match.end() + 120]
+        if re.search(r"\bpreferred\b|nice\s+to\s+have|\ba\s+plus\b", tail, re.I):
+            continue
+        return match.group(0).strip()
+    return None
+
+
 # Student-friendly phrasings that negate a bachelor's "requirement" (the
 # candidate is still working toward the degree).
 _ENROLLED_RE = re.compile(
@@ -201,6 +247,18 @@ def extract_degree_experience(
         result.requires_advanced_or_completed_degree = True
         quote = bachelor.group(0).strip()
         result.reasons.append(f"Requires a completed Bachelor's degree: {quote}")
+        result.evidence.append(quote)
+    if not result.requires_advanced_or_completed_degree:
+        qual = _degree_qualification(description or "")
+        if qual is not None:
+            result.requires_advanced_or_completed_degree = True
+            result.reasons.append(f"Lists a completed degree as a qualification: {qual}")
+            result.evidence.append(qual)
+    advanced_title = _ADVANCED_TITLE_RE.search(title or "")
+    if advanced_title is not None:
+        result.requires_advanced_or_completed_degree = True
+        quote = advanced_title.group(0).strip()
+        result.reasons.append(f"Graduate-level (Master's/PhD/MBA) role: {quote}")
         result.evidence.append(quote)
 
     years_hit = _match_years(text)

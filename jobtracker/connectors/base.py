@@ -32,11 +32,31 @@ class RawJob:
     extra: dict = field(default_factory=dict)
 
 
+@dataclass
+class KnownJob:
+    """A posting already stored for this company (lets connectors skip work).
+
+    Connectors that need one extra request per posting (Workday) reuse these
+    stored details for postings that are still listed, instead of
+    re-downloading every description on every poll.
+    """
+
+    source_job_id: str
+    title: str
+    location: str
+    description: str
+    application_url: str | None
+    posted_at: datetime | None
+
+
 class Connector(ABC):
     """Abstract base for all ATS connectors."""
 
     #: ATS identifier this connector handles (matches ``ATSType`` value).
     ats: str
+    #: Stored postings keyed by the "/job/..." path of their apply link. Set by
+    #: the ingest service before ``fetch``; connectors may ignore it.
+    known_jobs: dict[str, KnownJob] = {}
 
     @abstractmethod
     def fetch(self, company: CompanyConfig) -> list[RawJob]:

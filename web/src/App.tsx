@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadFeed } from "./api";
 import { Countdown } from "./Countdown";
-import { applyFilters, companyOptions, remoteOptions } from "./filtering";
+import {
+  applyFilters,
+  companyCounts,
+  companyOptions,
+  remoteOptions,
+} from "./filtering";
 import { JobCard } from "./JobCard";
 import {
   DEFAULT_FILTERS,
   FRESHNESS_OPTIONS,
+  TERM_LABELS,
   TERM_OPTIONS,
   type Feed,
   type Filters,
   type FreshnessHours,
 } from "./types";
 
-const TERM_LABELS: Record<string, string> = {
-  spring: "Spring (May–Aug)",
-  summer: "Summer",
-  winter: "Winter (Jan–Apr)",
-};
+
 
 function formatStamp(iso: string | null): string {
   if (!iso) return "unknown";
@@ -54,6 +56,7 @@ export function App() {
 
   const jobs = feed?.jobs ?? [];
   const visible = useMemo(() => applyFilters(jobs, filters), [jobs, filters]);
+  const counts = useMemo(() => companyCounts(jobs), [jobs]);
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setFilters((f) => ({ ...f, [key]: value }));
 
@@ -71,6 +74,9 @@ export function App() {
             {feed.job_count} eligible {feed.job_count === 1 ? "job" : "jobs"} ·
             updated {formatStamp(feed.generated_at)} · tracking{" "}
             {feed.tracked_company_count} companies
+            {feed.pending_ai_count
+              ? ` · ${feed.pending_ai_count} more awaiting AI check`
+              : ""}
           </p>
         )}
         <p className="countdown-row">
@@ -108,7 +114,7 @@ export function App() {
               <option value="">All companies</option>
               {companyOptions(jobs).map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {c} ({counts[c]})
                 </option>
               ))}
             </select>

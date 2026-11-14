@@ -9,7 +9,8 @@ from jobtracker.schemas.job import TermSeason
 
 
 def test_four_month_spring_2027() -> None:
-    result = extract_term("4-month Spring 2027 co-op")
+    # Canadian co-op naming: "Spring" = May-August.
+    result = extract_term("4-month Spring 2027 co-op", country="Canada")
     assert result.term_season == TermSeason.SPRING
     assert result.duration_months == 4
     assert result.term_start_date.year == 2027

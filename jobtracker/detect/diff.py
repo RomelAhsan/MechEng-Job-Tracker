@@ -87,6 +87,16 @@ class DetectionResult:
     current_job_count: int = 0
 
 
+#: Metadata refreshed on every poll even when the description is unchanged.
+_REFRESH_COLUMNS: tuple[str, ...] = (
+    "title",
+    "location",
+    "application_url",
+    "source_url",
+    "posted_at",
+)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -166,6 +176,14 @@ def detect_changes(
             _emit_event(session, existing, "changed", old_hash, existing.description_hash, now)
             result.changed.append(existing.job_id)
         else:
+            # Same description, but refresh light metadata the connector may
+            # now report better (e.g. Workday's country appended to the city,
+            # a corrected apply link). Without this, connector fixes never
+            # reach rows whose description is unchanged. Not a "change" event.
+            for column in _REFRESH_COLUMNS:
+                value = getattr(canonical, column, None)
+                if value is not None and getattr(existing, column) != value:
+                    setattr(existing, column, value)
             result.active.append(existing.job_id)
 
     # Rows previously active but absent from this fetch are now removed.

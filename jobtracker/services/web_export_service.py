@@ -160,6 +160,9 @@ def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
         "source_last_checked_at": _iso(_latest_source_check(session)),
         "tracked_company_count": tracked,
         "job_count": len(jobs),
+        # Ambiguous jobs held back until the AI confirms them (never shown
+        # unconfirmed when an AI key is configured).
+        "pending_ai_count": dashboard_service.pending_ai_count(session),
         "jobs": jobs,
     }
     return WebFeed(payload=payload, job_count=len(jobs))

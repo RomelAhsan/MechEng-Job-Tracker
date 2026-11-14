@@ -23,6 +23,8 @@ PROFILE = UserProfile(
 
 def _job(**overrides: object) -> SimpleNamespace:
     base = dict(
+        title="Mechanical Engineering Co-op Student",
+        description="",
         status="active",
         employment_type="internship",
         eligibility_status="possibly_eligible_unknown",
@@ -244,3 +246,85 @@ def test_clean_internship_all_unknown_eligible() -> None:
     )
     assert verdict.eligible is True
     assert verdict.failed_rules == []
+
+
+# --- Screening tiers (level 1 = rules only; level 2 = AI confirms) ---------
+
+
+def test_canadian_intern_title_is_level_one_auto() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(title="Mechanical Engineering Intern", country="Canada", location="Toronto, ON"),
+        PROFILE,
+        _no_degree_exp(),
+    )
+    assert verdict.eligible is True
+    assert verdict.tier == "auto"
+
+
+def test_us_intern_goes_to_ai() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(title="Mechanical Engineering Intern", country="United States"),
+        PROFILE,
+        _no_degree_exp(),
+    )
+    assert verdict.eligible is True
+    assert verdict.tier == "ai"
+
+
+def test_student_signal_only_in_description_goes_to_ai() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(
+            title="Mechanical Design Assistant",
+            description=(
+                "This co-op term is open to students currently enrolled in an "
+                "engineering program."
+            ),
+            employment_type="unknown",
+            country="Canada",
+        ),
+        PROFILE,
+        _no_degree_exp(),
+    )
+    assert verdict.eligible is True
+    assert verdict.tier == "ai"
+
+
+def test_no_student_signal_is_removed() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(
+            title="Propulsion Engineer (Raptor)",
+            description="Design rocket engines for Starship.",
+            employment_type="unknown",
+            country="United States",
+        ),
+        PROFILE,
+        _no_degree_exp(),
+    )
+    assert verdict.eligible is False
+    assert "not_student_role" in verdict.failed_rules
+
+
+def test_foreign_country_is_removed() -> None:
+    verdict = compute_stage1_eligibility(
+        _job(title="Mechanical Engineering Intern", country="India", location="Pune, India"),
+        PROFILE,
+        _no_degree_exp(),
+    )
+    assert verdict.eligible is False
+    assert "foreign_country" in verdict.failed_rules
+
+
+def test_multi_term_posting_passes_if_any_term_fits() -> None:
+    # "Spring/Summer 2027" at a US employer = winter + spring terms.
+    verdict = compute_stage1_eligibility(
+        _job(term_season="winter,spring"), PROFILE, _no_degree_exp()
+    )
+    assert "term" not in verdict.failed_rules
+
+
+def test_us_spring_semester_only_fails_term() -> None:
+    # US "Spring 2027" = January-May = the student's winter term only.
+    verdict = compute_stage1_eligibility(
+        _job(term_season="winter"), PROFILE, _no_degree_exp()
+    )
+    assert "term" in verdict.failed_rules

@@ -51,6 +51,7 @@ export interface Feed {
   source_last_checked_at: string | null;
   tracked_company_count: number;
   job_count: number;
+  pending_ai_count?: number;
   jobs: Job[];
 }
 
@@ -73,10 +74,24 @@ export const FRESHNESS_OPTIONS: FreshnessOption[] = [
   { value: 720, label: "Past 30 days" },
 ];
 
-// The three co-op terms the student can work (SPEC supported terms). Shown in
-// the term dropdown regardless of which happen to be present in the feed, so
-// the user always sees all three choices.
-export const TERM_OPTIONS = ["spring", "summer", "winter"] as const;
+// The student's three co-op terms, defined by months. Every employer's naming
+// ("Summer 2027", US "Spring 2027", "Fall co-op", month ranges) is mapped onto
+// these by the backend, and a posting can cover more than one
+// (term_season "winter,spring").
+export const TERM_OPTIONS = ["winter", "spring", "fall", "unknown"] as const;
+
+export const TERM_LABELS: Record<string, string> = {
+  winter: "Winter (Jan–Apr)",
+  spring: "Spring / Summer (May–Aug)",
+  fall: "Fall (Sep–Dec)",
+  unknown: "Term not stated",
+};
+
+/** Split a stored term_season ("winter,spring" / "unknown") into terms. */
+export function termsOf(value: string | null | undefined): string[] {
+  if (!value || value === "unknown") return [];
+  return value.split(",").map((t) => t.trim()).filter(Boolean);
+}
 
 export interface Filters {
   search: string; // matches title, company, or location

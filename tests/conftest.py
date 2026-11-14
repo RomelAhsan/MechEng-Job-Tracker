@@ -40,3 +40,15 @@ def session(engine: Engine) -> Iterator[Session]:
     factory = sessionmaker(bind=engine, future=True, expire_on_commit=False)
     with factory() as sess:
         yield sess
+
+
+@pytest.fixture(autouse=True)
+def _no_live_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests independent of a developer's local .env.
+
+    Environment variables override .env in pydantic-settings, so blanking them
+    here means no test ever sees a real Gemini/Apify key (no network, and the
+    strict 'AI must confirm' gate stays off unless a test turns it on).
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("APIFY_TOKEN", "")
