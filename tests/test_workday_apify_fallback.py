@@ -105,3 +105,20 @@ def test_blocked_error_detection() -> None:
     )
     assert _is_blocked_error(err)
     assert not _is_blocked_error(ValueError("x"))
+
+
+def test_actor_api_url_becomes_public_link() -> None:
+    raw = ApifyWorkdayConnector._to_raw(
+        {
+            "id": "",
+            "title": "Mechanical Intern",
+            "locationText": "Dallas",
+            "externalPath": "/job/Dallas/Mechanical-Intern_123",
+            "url": "https://cae.wd3.myworkdayjobs.com/wday/cxs/cae/career/job/Dallas/Mechanical-Intern_123",
+        }
+    )
+    assert raw is not None
+    assert raw.location == "Dallas"
+    assert raw.application_url == (
+        "https://cae.wd3.myworkdayjobs.com/career/job/Dallas/Mechanical-Intern_123"
+    )
