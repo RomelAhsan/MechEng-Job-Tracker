@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from jobtracker.extract.term import normalize_profile_term, term_set
 from jobtracker.extract.work_auth import (
     ELIGIBLE,
     INELIGIBLE_ITAR,
@@ -32,7 +33,6 @@ from jobtracker.schemas.job import (
     Classification,
     EmploymentType,
     JobStatus,
-    TermSeason,
 )
 from jobtracker.schemas.user_profile import UserProfile
 
@@ -96,11 +96,14 @@ def _score_type(job: CanonicalJob, result: FitScoreResult) -> int:
 def _score_term(
     job: CanonicalJob, profile: UserProfile, result: FitScoreResult
 ) -> tuple[int, bool]:
-    available = _norm(profile.available_terms)
-    if job.term_season == TermSeason.UNKNOWN.value:
+    available = {
+        t for t in (normalize_profile_term(x) for x in profile.available_terms) if t
+    }
+    job_terms = term_set(job.term_season)
+    if not job_terms:
         result.missing.append("Term season unknown.")
         return 0, True  # unknown never hard-fails
-    if job.term_season in available:
+    if job_terms & available:
         result.matched.append(f"Term matches availability ({job.term_season}).")
         return WEIGHT_TERM, True
     result.concerns.append(

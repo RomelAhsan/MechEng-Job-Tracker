@@ -16,11 +16,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from jobtracker.connectors.base import RawJob
+from jobtracker.connectors.base import KnownJob, RawJob
 from jobtracker.connectors.fallback import REQUIRES_FALLBACK, FallbackConnector
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.registry import get_connector
-from jobtracker.db.models import Company, QuarantineItem, SourceHealth
+from jobtracker.db.models import Company, Job, QuarantineItem, SourceHealth
 from jobtracker.db.repositories import CompanyRepository
 from jobtracker.detect.diff import detect_changes
 from jobtracker.normalize.normalizer import QuarantineError, normalize
@@ -118,6 +118,28 @@ def _config_from_company(company: Company) -> CompanyConfig:
     )
 
 
+def _known_jobs(session: Session, company_id: str) -> dict[str, KnownJob]:
+    """Active stored postings keyed by the '/job/...' path of their apply link."""
+    known: dict[str, KnownJob] = {}
+    rows = session.query(Job).filter(
+        Job.company_id == company_id, Job.status == "active"
+    )
+    for job in rows:
+        url = job.application_url or ""
+        idx = url.find("/job/")
+        if idx < 0 or not job.description:
+            continue
+        known[url[idx:]] = KnownJob(
+            source_job_id=job.source_job_id or "",
+            title=job.title or "",
+            location=job.location or "",
+            description=job.description,
+            application_url=job.application_url,
+            posted_at=job.posted_at,
+        )
+    return known
+
+
 def quarantine_raw(
     session: Session, company_id: str, raw: RawJob, reason: str
 ) -> None:
@@ -164,6 +186,7 @@ def _ingest_company(
 ) -> CompanyRunResult:
     config = _config_from_company(company)
     connector = get_connector(company.ats, http)
+    connector.known_jobs = _known_jobs(session, company.id)
     raw_jobs = connector.fetch(config)
 
     # Unsupported ATS: the fallback stub returns [] and flags requires_fallback.
@@ -184,8 +207,13 @@ def _ingest_company(
     detection = detect_changes(session, company.id, canonical)
     session.flush()
 
+    # Screen ONLY this company's new/changed jobs. (Passing None here used to
+    # mean "screen the entire database", which re-screened ~8k jobs after every
+    # company with no changes and made each poll take ~47 minutes.) The full
+    # re-screen happens once per run in the separate `screen` step.
     screen_ids = detection.new + detection.changed
-    summary = screening_service.screen_jobs(session, job_ids=screen_ids or None)
+    if screen_ids:
+        summary = screening_service.screen_jobs(session, job_ids=screen_ids)
 
     return CompanyRunResult(
         company_id=company.id,

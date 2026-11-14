@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.ai.prompts import (
+    PROMPT_VERSION,
     SPEC_FIELDS,
     JobPromptInput,
     build_analysis_prompt,
@@ -43,6 +44,7 @@ from jobtracker.ai.provider import (
     AIQuotaExhaustedError,
     AIRateLimitedError,
     AIResult,
+    GeminiProvider,
     NullProvider,
     get_provider,
 )
@@ -157,6 +159,7 @@ def _job_prompt_input(job: Job, company_name: str) -> JobPromptInput:
         preferred_qualifications=list(job.preferred_qualifications or []),
         skills=list(job.skills or []),
         application_url=job.application_url or "",
+        country=job.country,
     )
 
 
@@ -215,6 +218,37 @@ def _coerce_confidence(data: dict) -> float | None:
 def _find_cache(
     session: Session, job_id: str, description_hash: str | None, profile_version: int
 ) -> AiAnalysisCache | None:
+    """Return a cached analysis that is still valid for the CURRENT rules.
+
+    A verdict made under an older prompt (older eligibility rules) is ignored so
+    the job is re-analyzed with the current instructions; otherwise improving
+    the rules would never affect jobs already analyzed. Manual overrides stay
+    valid regardless.
+    """
+    rows = session.scalars(
+        select(AiAnalysisCache).where(
+            AiAnalysisCache.job_id == job_id,
+            AiAnalysisCache.description_hash == description_hash,
+            AiAnalysisCache.profile_version == profile_version,
+        )
+    ).all()
+    for row in rows:
+        if row.overridden:
+            return row
+        if (row.result or {}).get("_prompt_version") == PROMPT_VERSION:
+            return row
+    return None
+
+
+def _cache_row_for_write(
+    session: Session, job_id: str, description_hash: str | None, profile_version: int
+) -> AiAnalysisCache | None:
+    """Return the existing row for this cache key, stale or not.
+
+    The table is unique on (job_id, description_hash, profile_version), so a
+    re-analysis under a newer prompt must UPDATE the stale row rather than
+    insert a second one (which raised IntegrityError and aborted screen-ai).
+    """
     return session.scalars(
         select(AiAnalysisCache).where(
             AiAnalysisCache.job_id == job_id,
@@ -222,6 +256,37 @@ def _find_cache(
             AiAnalysisCache.profile_version == profile_version,
         )
     ).first()
+
+
+def latest_verdict(
+    session: Session, job_id: str, *, user_id: int | None = None
+) -> tuple[dict | None, bool]:
+    """Return ``(result, is_current)`` for the newest cached analysis of a job.
+
+    ``is_current`` is False when the analysis was made under older rules. The
+    relevant-jobs gate treats an OLD "not eligible" as still disqualifying (any
+    sign of ineligibility removes a job) but does not trust an OLD "eligible"
+    until the job is re-analyzed under the current rules.
+    """
+    job = session.get(Job, job_id)
+    if job is None:
+        return None, False
+    _, profile_version = resolve_profile(session, user_id=user_id)
+    rows = session.scalars(
+        select(AiAnalysisCache).where(
+            AiAnalysisCache.job_id == job_id,
+            AiAnalysisCache.description_hash == job.description_hash,
+            AiAnalysisCache.profile_version == profile_version,
+        )
+    ).all()
+    if not rows:
+        return None, False
+    current = [
+        r for r in rows
+        if r.overridden or (r.result or {}).get("_prompt_version") == PROMPT_VERSION
+    ]
+    row = (current or rows)[-1]
+    return dict(row.result or {}), bool(current)
 
 
 def _to_result(row: AiAnalysisCache, *, cache_hit: bool) -> AnalysisResult:
@@ -336,10 +401,11 @@ def analyze_job(
         return _unavailable_result(job_id, raw.message or "AI unavailable.")
 
     parsed = parse_strict_json(raw.text)
+    parsed["_prompt_version"] = PROMPT_VERSION
     confidence = _coerce_confidence(parsed)
 
     now = datetime.now(UTC)
-    row = _find_cache(session, job_id, job.description_hash, profile_version)
+    row = _cache_row_for_write(session, job_id, job.description_hash, profile_version)
     if row is None:
         row = AiAnalysisCache(
             job_id=job_id,
@@ -417,7 +483,9 @@ def _store_analysis(
 ) -> AiAnalysisCache:
     """Persist one parsed analysis to the cache + Job row (shared by batch)."""
     now = datetime.now(UTC)
-    row = _find_cache(session, job.job_id, job.description_hash, profile_version)
+    row = _cache_row_for_write(
+        session, job.job_id, job.description_hash, profile_version
+    )
     if row is None:
         row = AiAnalysisCache(
             job_id=job.job_id,
@@ -480,6 +548,7 @@ def analyze_jobs_batch(
         if parsed is None:
             continue
         parsed.pop("index", None)
+        parsed["_prompt_version"] = PROMPT_VERSION
         _store_analysis(session, job, parsed, profile_version, raw)
         stored += 1
     logger.info(
@@ -490,6 +559,119 @@ def analyze_jobs_batch(
         raw.model,
     )
     return stored
+
+
+def verification_enabled(settings: Settings | None = None) -> bool:
+    """True when a second-opinion model is configured alongside a key."""
+    settings = settings or get_settings()
+    return bool(
+        (settings.gemini_api_key or "").strip()
+        and (settings.gemini_verify_model or "").strip()
+    )
+
+
+def has_current_verification(result: dict | None) -> bool:
+    """True when ``result`` carries a second opinion made under current rules."""
+    verify = (result or {}).get("_verify")
+    return isinstance(verify, dict) and verify.get("_prompt_version") == PROMPT_VERSION
+
+
+def verify_jobs(
+    session: Session,
+    job_ids: list[str],
+    *,
+    user_id: int | None = None,
+    settings: Settings | None = None,
+    provider: AIProvider | None = None,
+    delay_seconds: float = 0.0,
+) -> int:
+    """Get a second opinion on ambiguous jobs the primary model approved.
+
+    Only jobs whose CURRENT primary verdict is eligible and that lack a current
+    second opinion are sent. The verdict is stored inside the primary result
+    as ``result["_verify"]``; :func:`ai_eligibility` then requires both to say
+    eligible. On quota exhaustion the remaining jobs stay pending (hidden) and
+    are retried next run. Returns the number of jobs verified.
+    """
+    from jobtracker.screen.ai_verdict import ai_eligibility
+
+    settings = settings or get_settings()
+    if not verification_enabled(settings):
+        return 0
+    verify_provider = provider or GeminiProvider(
+        (settings.gemini_api_key or "").strip(), model=settings.gemini_verify_model
+    )
+    profile, profile_version = resolve_profile(
+        session, user_id=user_id, settings=settings
+    )
+
+    todo: list[tuple[Job, AiAnalysisCache]] = []
+    for job_id in job_ids:
+        job = session.get(Job, job_id)
+        if job is None or (job.screening_tier or "ai") != "ai":
+            continue
+        row = _find_cache(session, job_id, job.description_hash, profile_version)
+        if row is None or row.overridden:
+            continue
+        result = dict(row.result or {})
+        if has_current_verification(result) or not ai_eligibility(result):
+            continue
+        todo.append((job, row))
+
+    batch_size = max(1, getattr(settings, "ai_batch_size", 1))
+    verified = 0
+    for start in range(0, len(todo), batch_size):
+        group = todo[start : start + batch_size]
+        if verified and delay_seconds:
+            time.sleep(delay_seconds)
+        prompt = build_batch_analysis_prompt(
+            profile, [_job_prompt_input(j, j.company_id) for j, _ in group]
+        )
+        try:
+            raw = verify_provider.analyze(prompt)
+        except AIRateLimitedError as exc:
+            time.sleep(min(exc.retry_after_seconds, MAX_RATE_LIMIT_WAIT_SECONDS))
+            try:
+                raw = verify_provider.analyze(prompt)
+            except AIProviderError:
+                logger.warning("Verify model still limited; stopping verification.")
+                break
+        except AIQuotaExhaustedError:
+            logger.warning(
+                "Verify model daily quota used up after %d jobs; the rest stay "
+                "pending until the next run.",
+                verified,
+            )
+            break
+        except AIProviderError as exc:
+            logger.warning("Verify model error: %s", exc)
+            break
+        if not raw.available:
+            break
+        try:
+            parsed = parse_strict_json_array(raw.text)
+        except AiServiceError as exc:
+            logger.warning("Verify batch unparseable: %s", exc)
+            continue
+        by_index = {d["index"]: d for d in parsed}
+        for i, (job, row) in enumerate(group):
+            second = by_index.get(i)
+            if second is None:
+                continue
+            result = dict(row.result or {})
+            result["_verify"] = {
+                "model": raw.model,
+                "_prompt_version": PROMPT_VERSION,
+                "eligible": ai_eligibility(second),
+                "failed_rules": second.get("failed_rules") or [],
+                "explanation": second.get("explanation", ""),
+            }
+            row.result = result
+            job.ai_analysis = result
+            verified += 1
+        session.flush()
+    logger.info("AI second opinion stored for %d/%d jobs.", verified, len(todo))
+    return verified
 
 
 def analyze_jobs_bulk(
@@ -548,6 +730,16 @@ def analyze_jobs_bulk(
     _, profile_version = resolve_profile(session, user_id=user_id, settings=settings)
 
     # Which survivors actually need a NEW analysis (skip cached ones up front).
+    # Level-1 ("auto") jobs -- intern/co-op in Canada with no disqualifier --
+    # are decided by the rules alone and never sent to the AI.
+    auto_ids = set(
+        session.scalars(
+            select(Job.job_id).where(
+                Job.job_id.in_(candidate_ids), Job.screening_tier == "auto"
+            )
+        )
+    ) if candidate_ids else set()
+    candidate_ids = [j for j in candidate_ids if j not in auto_ids]
     summary = BulkAnalysisSummary()
     todo: list[str] = []
     for job_id in candidate_ids:
@@ -611,6 +803,7 @@ def analyze_jobs_bulk(
             # Any job the model omitted from the response stays un-cached and
             # is retried next run; count it as an error for visibility.
             summary.errors += len(group) - stored
+        _verify_after_bulk(session, candidate_ids, user_id, settings, delay_seconds)
         return summary
 
     # SINGLE-JOB path (batch_size == 1): one request per job.
@@ -669,7 +862,30 @@ def analyze_jobs_bulk(
             # Provider surfaced an error result rather than raising (fail-soft).
             summary.errors += 1
 
+    _verify_after_bulk(session, candidate_ids, user_id, settings, delay_seconds)
     return summary
+
+
+def _verify_after_bulk(
+    session: Session,
+    candidate_ids: list[str],
+    user_id: int | None,
+    settings: Settings,
+    delay_seconds: float | None,
+) -> None:
+    """Run the second-opinion pass; never lets it break the bulk pass."""
+    if not verification_enabled(settings):
+        return
+    try:
+        verify_jobs(
+            session,
+            candidate_ids,
+            user_id=user_id,
+            settings=settings,
+            delay_seconds=delay_seconds or 0.0,
+        )
+    except Exception:  # noqa: BLE001 - verification is best-effort.
+        logger.exception("AI second-opinion pass failed")
 
 
 def override_analysis(
@@ -695,7 +911,7 @@ def override_analysis(
     _, profile_version = resolve_profile(session, user_id=user_id, settings=settings)
 
     now = datetime.now(UTC)
-    row = _find_cache(session, job_id, job.description_hash, profile_version)
+    row = _cache_row_for_write(session, job_id, job.description_hash, profile_version)
     if row is None:
         row = AiAnalysisCache(
             job_id=job_id,
@@ -704,6 +920,7 @@ def override_analysis(
             created_at=now,
         )
         session.add(row)
+    validated["_manual"] = True  # a human decision needs no second opinion
     row.result = validated
     row.confidence = _coerce_confidence(validated)
     row.provider = "manual"

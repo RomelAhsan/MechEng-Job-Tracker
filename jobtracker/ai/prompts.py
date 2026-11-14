@@ -54,6 +54,7 @@ class JobPromptInput:
     preferred_qualifications: list[str]
     skills: list[str]
     application_url: str
+    country: str | None = None
 
 
 def truncate_description(text: str, *, limit: int = MAX_DESCRIPTION_CHARS) -> str:
@@ -69,7 +70,12 @@ def _schema_block() -> str:
     return json.dumps(
         {
             "relevance_score": "integer 0-100",
-            "recommendation": "one of: apply | maybe | skip",
+            "failed_rules": (
+                "array of the RULE numbers (1-7) this posting fails; [] if none. "
+                "Decide this FIRST, rule by rule"
+            ),
+            "eligible": "boolean: true exactly when failed_rules is []",
+            "recommendation": "apply (eligible) or skip (not eligible)",
             "mechanical_relevance": "short string assessing mechanical-engineering fit",
             "term_assessment": "short string on term/season fit vs the profile",
             "duration_assessment": "short string on co-op duration fit",
@@ -119,37 +125,56 @@ def build_profile_summary(profile: dict) -> str:
 #: the rules below define exactly when to answer "skip". The deterministic
 #: Stage-1 filter already removed the clear-cut cases; the model's job is the
 #: AMBIGUOUS ones, and it must resolve ambiguity conservatively.
+#: Bumped whenever the rules below change, so cached verdicts made under older
+#: rules are re-done instead of being trusted (see ai_service._find_cache).
+PROMPT_VERSION = 5
+
 ELIGIBILITY_RULES = (
-    "=== ELIGIBILITY RULES (apply strictly; set recommendation=\"skip\" if ANY "
-    "fail) ===\n"
-    "The student is a FIRST-YEAR undergraduate and a CANADIAN CITIZEN (no US "
-    "citizenship, no US work authorization, no completed degree).\n"
-    "1. CITIZENSHIP / ITAR (most common disqualifier -- apply firmly): If the "
-    "role is in the United States (or its country is unknown) AND the employer "
-    "is in aerospace, defense, space, satellites, rockets/propulsion, weapons, "
-    "or any ITAR/EAR/export-controlled field (e.g. SpaceX, Blue Origin, "
-    "Lockheed, Northrop, Boeing, RTX, Raytheon, Anduril and similar), you MUST "
-    "assume it requires US citizenship or permanent residency / a security "
-    "clearance that a Canadian citizen cannot obtain -> recommendation=skip. "
-    "This holds EVEN IF the posting never mentions citizenship, ITAR, or "
-    "clearance -- treat silence as 'US citizenship required' for these "
-    "employers. The ONLY exception is a posting that EXPLICITLY offers visa "
-    "sponsorship or explicitly welcomes non-US / international / Canadian "
-    "applicants. A role physically located in CANADA is fine on this axis.\n"
-    "2. US (non-defense) roles are eligible ONLY if sponsorship is explicitly "
-    "available or the posting welcomes international/Canadian applicants; if a "
-    "US role is silent on sponsorship, lean skip (a first-year Canadian rarely "
-    "gets US sponsorship).\n"
-    "3. LEVEL: skip if the role requires a completed degree, a Master's/PhD, "
-    "'new grad'/'graduate' status, seniority (senior/staff/principal/lead), or "
-    "multiple years of professional experience. Co-op/internship/student roles "
-    "open to any year are eligible.\n"
-    "4. FIELD: eligible only if mechanical / mechatronics / robotics / "
-    "manufacturing / hardware / aerospace-mechanical / automotive / thermal / "
-    "product-design engineering. Skip pure software/EE/finance/HR/sales roles.\n"
-    "5. When genuinely ambiguous after the above, prefer 'maybe' over a "
-    "confident wrong answer, and explain the uncertainty. NEVER guess facts not "
-    "in the posting. Accuracy matters more than inclusion.\n"
+    "=== YOUR JOB ===\n"
+    "These postings already passed a keyword filter but are AMBIGUOUS. Decide, "
+    "for this specific student, whether they can actually apply and be hired. "
+    "Your answer must be correct: a wrong 'eligible' shows the student a job "
+    "they cannot get; a wrong 'not eligible' hides one they could.\n"
+    "Set \"eligible\": false and recommendation=\"skip\" the moment there is ANY "
+    "concrete sign the student is ineligible. Missing information is NOT a "
+    "sign of ineligibility. Use recommendation=\"apply\" with "
+    "\"eligible\": true when nothing disqualifies the student.\n"
+    "=== THE STUDENT ===\n"
+    "First-year undergraduate in Mechanical Engineering at the University of "
+    "Waterloo. CANADIAN citizen only: no US citizenship, no US green card, no "
+    "security clearance, no work permit for any other country. Has NOT "
+    "completed any degree. Seeks a 4-month co-op/internship in any term.\n"
+    "=== RULES ===\n"
+    "1. It must be a student role (co-op / internship / student position). A "
+    "regular full-time or permanent job is not eligible, even if junior.\n"
+    "2. CITIZENSHIP: not eligible if the posting requires US citizenship, US "
+    "person status, a green card, a security clearance, or ITAR/EAR export-"
+    "control eligibility. For a role located in the United States at an "
+    "aerospace, defense, space, satellite, rocket, or weapons employer, treat "
+    "silence as 'US citizenship required' (ITAR) unless the posting explicitly "
+    "welcomes international/Canadian applicants or offers sponsorship. A role "
+    "located in Canada is fine on this rule.\n"
+    "3. OTHER US ROLES: a US internship can be open to Canadian students "
+    "(J-1). Eligible only if the posting does not restrict it to US work "
+    "authorization; 'must be authorized to work in the US' or 'no sponsorship' "
+    "means not eligible. Silence about sponsorship or J-1 at a NON-aerospace/"
+    "defense US employer is NOT a reason to mark it ineligible.\n"
+    "4. OTHER COUNTRIES: a role located outside Canada and the US is not "
+    "eligible.\n"
+    "5. LEVEL: not eligible if it requires a completed degree (e.g. 'Bachelor's "
+    "degree in ...' as a requirement, not 'pursuing'), a Master's/PhD/MBA, "
+    "graduate-student status, 'new grad', final-year/upper-year-only students, "
+    "seniority, or years of professional experience.\n"
+    "6. TERM: the student can work ANY 4-month term (Jan-Apr, May-Aug, or "
+    "Sep-Dec), so the season never disqualifies. Not eligible only if the "
+    "posting requires a duration that cannot be 4 months (e.g. 8 or 12 months "
+    "only, or 'full year').\n"
+    "7. FIELD: eligible if the work is mechanical, mechatronics, robotics, "
+    "manufacturing, hardware, aerospace/mechanical, automotive, thermal, "
+    "energy/power-plant, or product-design engineering. Not eligible for pure "
+    "software, electrical-only, finance, HR, sales, or non-engineering roles.\n"
+    "8. Quote the exact posting text that decided it in \"evidence\". Never "
+    "invent facts not in the posting.\n"
 )
 
 
@@ -185,6 +210,7 @@ def build_analysis_prompt(profile: dict, job: JobPromptInput) -> str:
         f"Title: {job.title}\n"
         f"Company: {job.company}\n"
         f"Location: {job.location}\n"
+        f"Country: {job.country or 'unknown'}\n"
         f"Term/Season: {job.term_season}\n"
         f"Duration: {job.duration_label}\n"
         f"Citizenship requirement: {job.citizenship_requirement or 'unknown'}\n"
@@ -222,6 +248,7 @@ def _batch_job_block(index: int, job: JobPromptInput) -> str:
         f"Title: {job.title}\n"
         f"Company: {job.company}\n"
         f"Location: {job.location}\n"
+        f"Country: {job.country or 'unknown'}\n"
         f"Term/Season: {job.term_season}\n"
         f"Duration: {job.duration_label}\n"
         f"Citizenship requirement: {job.citizenship_requirement or 'unknown'}\n"

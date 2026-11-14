@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 
 from jobtracker.extract.degree_experience import DegreeExperienceExtraction
+from jobtracker.extract.term import normalize_profile_term, term_set
 from jobtracker.extract.work_auth import (
     INELIGIBLE_ITAR,
     LIKELY_INELIGIBLE_SPONSORSHIP_REQUIRED,
@@ -90,6 +91,67 @@ class EligibilityVerdict:
     #: NOT explicitly barred by posting text -- i.e. ambiguous and routed to the
     #: AI stage for a citizenship-aware decision (not hard-excluded here).
     itar_company_ambiguous: bool = False
+    #: Which screening level decided an eligible job:
+    #:   "auto" -- level 1: a clearly student-titled (intern/co-op) Canadian
+    #:             role with no disqualifier. Shown without needing the AI.
+    #:   "ai"   -- passed every hard rule but is ambiguous (US/unknown country,
+    #:             or the student signal is only in the description, or the
+    #:             wording is unclear). Shown only once the AI confirms it.
+    #: ``None`` when the job failed a hard rule.
+    tier: str | None = None
+
+
+# Level-1 signal: the TITLE says this is a student role.
+_TITLE_STUDENT_RE = re.compile(
+    r"\b(?:intern(?:s|ship|ships)?|co-?ops?|coop|student|work\s+term|"
+    r"placement|apprentice(?:ship)?|stagiaire)\b",
+    re.IGNORECASE,
+)
+# French "Stage" = internship ("Stage - Tunnels", "Stage en génie mécanique").
+# Only a leading "Stage" followed by a separator / French preposition counts,
+# so "Multi-Stage Compressor" or "Stage 2 Engineer" do not.
+_TITLE_STAGE_RE = re.compile(
+    r"^\s*stages?\s*(?:[-–—:|]|en\b|de\b|d['’]|\(|20\d\d)", re.IGNORECASE
+)
+# Weaker signal found only in the DESCRIPTION: plausibly a student role, so the
+# AI decides. ("students" or "university" alone is common in full-time
+# boilerplate, so stronger phrasings are required.)
+_DESC_STUDENT_RE = re.compile(
+    r"\b(?:currently\s+(?:enrolled|pursuing|studying)|enrolled\s+in\s+(?:a|an)\s+"
+    r"(?:undergraduate|bachelor|engineering|university|college)|pursuing\s+(?:a|an|your)\s+"
+    r"(?:bachelor|undergraduate|degree|engineering)|co-?op\s+(?:term|student|program|"
+    r"placement|position)|work\s+term|internship\s+(?:term|program|position|opportunity)|"
+    r"this\s+(?:internship|co-?op)|summer\s+student|student\s+(?:position|role|"
+    r"opportunity|program)|returning\s+to\s+(?:school|university|studies))\b",
+    re.IGNORECASE,
+)
+_NORTH_AMERICA = {"canada", "united states"}
+
+# Graduation-window requirements ("Expected graduation between Fall 2027 and
+# Summer 2028", "graduating in 2027 or 2028"). A sentence that only sets a
+# LOWER bound ("graduating 2027 or later", "at least one term remaining
+# after") is not a window and is ignored.
+_GRAD_SENTENCE_RE = re.compile(r"[^.!?\n]*\bgraduat[^.!?\n]*", re.IGNORECASE)
+_GRAD_OPEN_ENDED_RE = re.compile(
+    r"\b(?:or\s+later|or\s+after|and\s+(?:later|beyond)|onwards?|beyond|after|"
+    r"at\s+least|remaining|return(?:ing)?\s+to|no\s+earlier\s+than|or\s+beyond)\b",
+    re.IGNORECASE,
+)
+_GRAD_YEAR_RE = re.compile(r"\b(20[2-4]\d)\b")
+
+
+def graduation_window_conflict(text: str, grad_year: int | None) -> str | None:
+    """Return the sentence when the posting requires graduating before ``grad_year``."""
+    if not grad_year or not text:
+        return None
+    for match in _GRAD_SENTENCE_RE.finditer(text):
+        sentence = match.group(0).strip()
+        if len(sentence) > 300 or _GRAD_OPEN_ENDED_RE.search(sentence):
+            continue
+        years = [int(y) for y in _GRAD_YEAR_RE.findall(sentence)]
+        if years and max(years) < grad_year:
+            return sentence
+    return None
 
 
 def _norm(values: list[str] | None) -> set[str]:
@@ -157,6 +219,35 @@ def compute_stage1_eligibility(
             match.group(0) if match else None,
         )
 
+    # (2a) Must be a student role at all. A posting with NO intern/co-op/
+    # student signal in the title AND none of the strong student phrasings in
+    # the description is a regular (full-time) job -- removed immediately.
+    title_student = (
+        _TITLE_STUDENT_RE.search(title) is not None
+        or _TITLE_STAGE_RE.search(title) is not None
+    )
+    desc_student = _DESC_STUDENT_RE.search(description) is not None
+    if (
+        employment_type not in _DISQUALIFYING_EMPLOYMENT_TYPES
+        and not title_student
+        and not desc_student
+    ):
+        _fail(
+            "not_student_role",
+            "No co-op / internship / student signal: this is a regular job.",
+            title or None,
+        )
+
+    # (2d) Located outside Canada and the US: needs that country's work
+    # authorization, which the Canadian-citizen profile does not have.
+    country_name = (getattr(job, "country", None) or "").strip()
+    if country_name and country_name.lower() not in _NORTH_AMERICA:
+        _fail(
+            "foreign_country",
+            f"Located in {country_name}; requires local work authorization.",
+            getattr(job, "location", None) or country_name,
+        )
+
     # (2c) ITAR-restricted COMPANY policy. US aerospace/defense employers
     # (SpaceX, Lockheed, Northrop, ...) require US citizenship (ITAR/EAR) on
     # essentially every US-located role. The earlier "route the ambiguous ones
@@ -204,6 +295,18 @@ def compute_stage1_eligibility(
             citizenship_requirement or None,
         )
 
+    # (4b) Graduation window that ends before the student graduates.
+    grad_conflict = graduation_window_conflict(
+        description, getattr(profile, "expected_graduation_year", None)
+    )
+    if grad_conflict:
+        _fail(
+            "graduation_window",
+            "Requires graduating before your expected graduation year "
+            f"({profile.expected_graduation_year}).",
+            grad_conflict[:200],
+        )
+
     # (5) advanced / completed-degree prerequisite.
     if degree_exp.requires_advanced_or_completed_degree:
         reason = (
@@ -231,15 +334,18 @@ def compute_stage1_eligibility(
         _fail("experience", reason, evidence)
 
     # (7) term explicitly stated and incompatible. UNKNOWN never fails.
+    # A posting may name several terms ("Spring/Summer 2027" -> winter,spring);
+    # it fails only when NONE of them is a term the student can work.
     term_season = getattr(job, "term_season", None) or TermSeason.UNKNOWN.value
-    available = _norm(profile.available_terms)
-    if term_season != TermSeason.UNKNOWN.value and available and (
-        term_season.lower() not in available
-    ):
+    job_terms = term_set(term_season)
+    available = {
+        t for t in (normalize_profile_term(x) for x in profile.available_terms) if t
+    }
+    if job_terms and available and not (job_terms & available):
         _fail(
             "term",
-            f"Term {term_season} is incompatible with availability "
-            f"({', '.join(sorted(available))}).",
+            f"Term ({', '.join(sorted(job_terms))}) does not match your "
+            f"availability ({', '.join(sorted(available))}).",
             term_season,
         )
 
@@ -262,8 +368,26 @@ def compute_stage1_eligibility(
             )
 
     if verdict.eligible:
-        verdict.reasons.append(
-            "Passed deterministic hard filter (co-op/internship, no "
-            "disqualifying requirement)."
-        )
+        is_canada = country_name.lower() == "canada"
+        if title_student and is_canada and not verdict.itar_company_ambiguous:
+            verdict.tier = "auto"
+            verdict.reasons.append(
+                "Level 1: intern/co-op role in Canada with no disqualifying "
+                "requirement -- no AI check needed."
+            )
+        else:
+            verdict.tier = "ai"
+            why = []
+            if not title_student:
+                why.append("student signal only in the description")
+            if not is_canada:
+                why.append(
+                    "located in the US" if country_name else "location not stated"
+                )
+            if verdict.itar_company_ambiguous:
+                why.append("aerospace/defense employer")
+            verdict.reasons.append(
+                "Passed every hard rule; sent to the AI to confirm ("
+                + ", ".join(why or ["ambiguous wording"]) + ")."
+            )
     return verdict

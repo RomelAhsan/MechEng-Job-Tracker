@@ -30,6 +30,13 @@ from jobtracker.schemas.company import CompanyConfig
 logger = logging.getLogger("jobtracker.connectors.workday")
 
 _PAGE_LIMIT = 20
+#: Boards bigger than this are searched by student keywords instead of listed
+#: in full (see ``_fetch_all_postings``).
+_LARGE_BOARD = 300
+#: Workday keyword queries that surface student roles (English + French).
+_STUDENT_SEARCH_TERMS = ("intern", "co-op", "coop", "student", "stagiaire")
+#: Hard ceiling on postings read from one query (Workday caps offsets ~2000).
+_MAX_POSTINGS = 2000
 
 # tenant.dc.myworkdayjobs.com/[wday/cxs/tenant/]{site}[/...]
 _URL_RE = re.compile(
@@ -121,32 +128,63 @@ class WorkdayConnector(Connector):
         return raw_jobs
 
     def _fetch_all_postings(self, coords: WorkdayCoordinates) -> list[dict]:
-        url = f"{coords.cxs_base}/jobs"
+        """List postings; switch to student-keyword search on very large boards.
+
+        A global board (Thales, Airbus, GE Vernova: 2,000+ postings) would need
+        one detail request per posting every poll, which is slow and almost
+        entirely full-time roles the profile can never take. Above
+        ``_LARGE_BOARD`` postings we instead run Workday's own keyword search
+        for student terms and union the results, so only plausibly-student
+        postings are fetched. Smaller boards are listed in full.
+        """
+        first = self._search(coords, "", offset=0)
+        total = first.get("total") if isinstance(first, dict) else None
+        if isinstance(total, int) and total > _LARGE_BOARD:
+            seen: dict[str, dict] = {}
+            for term in _STUDENT_SEARCH_TERMS:
+                for posting in self._search_all(coords, term):
+                    seen.setdefault(posting.get("externalPath", ""), posting)
+            return [p for key, p in seen.items() if key]
+        return self._search_all(coords, "", first_page=first)
+
+    def _search(self, coords: WorkdayCoordinates, text: str, *, offset: int) -> dict:
+        response = self.http.request(
+            "POST",
+            f"{coords.cxs_base}/jobs",
+            json_body={
+                "limit": _PAGE_LIMIT,
+                "offset": offset,
+                "appliedFacets": {},
+                "searchText": text,
+            },
+        )
+        # CORE RULE #1: a 401/403 (auth wall) must surface, not be worked
+        # around, so the company stays a fallback stub. 404 = wrong site.
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    def _search_all(
+        self, coords: WorkdayCoordinates, text: str, *, first_page: dict | None = None
+    ) -> list[dict]:
         postings: list[dict] = []
         offset = 0
+        payload = first_page if first_page is not None else self._search(
+            coords, text, offset=0
+        )
         while True:
-            response = self.http.request(
-                "POST",
-                url,
-                json_body={
-                    "limit": _PAGE_LIMIT,
-                    "offset": offset,
-                    "appliedFacets": {},
-                    "searchText": "",
-                },
-            )
-            # CORE RULE #1: a 401/403 (auth wall) must surface, not be worked
-            # around, so the company stays a fallback stub. 404 = wrong site.
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, dict):
-                break
             page = payload.get("jobPostings") or []
             postings.extend(p for p in page if isinstance(p, dict))
             total = payload.get("total")
             offset += len(page)
-            if not page or not isinstance(total, int) or offset >= total:
+            if (
+                not page
+                or not isinstance(total, int)
+                or offset >= total
+                or offset >= _MAX_POSTINGS
+            ):
                 break
+            payload = self._search(coords, text, offset=offset)
         return postings
 
     def _to_raw(
@@ -155,6 +193,29 @@ class WorkdayConnector(Connector):
         external_path = posting.get("externalPath")
         if not external_path:
             return None
+
+        # Already stored and still listed: reuse the stored details rather than
+        # re-downloading the description (one request per posting per poll was
+        # most of the poll time). Title comes from the fresh listing.
+        # Local import: normalizer imports the connector package (cycle).
+        from jobtracker.normalize.normalizer import split_location
+
+        known = self.known_jobs.get(external_path)
+        # Re-fetch once if the stored row predates the country fix (location
+        # with no recognisable country), so it gets the detail's country.
+        if known is not None and split_location(known.location)[2] is None:
+            known = None
+        if known is not None:
+            return RawJob(
+                source_job_id=known.source_job_id,
+                title=posting.get("title") or known.title,
+                location=known.location,
+                description_html=known.description,
+                application_url=known.application_url,
+                source_url=known.application_url,
+                posted_at=known.posted_at,
+                extra={"_reused": True},
+            )
 
         # CORE RULE #1: a board may list postings publicly but auth-wall the
         # per-posting detail endpoint. ``get_json`` does not raise on 401/403,
@@ -177,6 +238,14 @@ class WorkdayConnector(Connector):
         source_job_id = info.get("id") or req_id or external_path
 
         location = info.get("location") or posting.get("locationsText") or ""
+        # Workday usually gives only a city ("Markham", "Dallas"); the detail's
+        # country descriptor is the reliable signal, so append it. Without this
+        # every Workday job had an unknown country, which hid it from the
+        # Canada/US eligibility rules.
+        country = info.get("country")
+        country_name = country.get("descriptor") if isinstance(country, dict) else None
+        if country_name and country_name.lower() not in location.lower():
+            location = f"{location}, {country_name}" if location else country_name
         posted_at = _parse_dt(info.get("startDate"))
 
         merged = {**posting, "_detail": info}

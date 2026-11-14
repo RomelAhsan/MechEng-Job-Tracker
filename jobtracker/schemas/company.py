@@ -21,6 +21,8 @@ class ATSType(StrEnum):
     SMARTRECRUITERS = "smartrecruiters"
     WORKDAY = "workday"
     WORKABLE = "workable"
+    #: SAP SuccessFactors Career Site Builder; board_token = career-site host.
+    SUCCESSFACTORS = "successfactors"
     RSS = "rss"
     SITEMAP = "sitemap"
     JSON_LD = "json_ld"

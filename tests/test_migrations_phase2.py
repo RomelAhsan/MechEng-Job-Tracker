@@ -77,7 +77,7 @@ def test_head_is_stage1_eligibility_revision() -> None:
     # 0007_company_itar chains after 0006_stage1_eligibility (the company-level
     # ITAR flag). Later features chain 0008_* after this.
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_current_head() == "0007_company_itar"
+    assert script.get_current_head() == "0008_screening_tier"
 
 
 def test_downgrade_roundtrip(

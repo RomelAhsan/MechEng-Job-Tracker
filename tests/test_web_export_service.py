@@ -12,6 +12,7 @@ import json
 
 from sqlalchemy.orm import Session
 
+from jobtracker.ai.prompts import PROMPT_VERSION
 from jobtracker.db.models import Company, Job
 from jobtracker.services import web_export_service
 
@@ -81,6 +82,7 @@ def test_job_with_ai_analysis_exposes_reasoning(session: Session) -> None:
                 "work_authorization_assessment": "Canada-located; eligible.",
                 "concerns": [],
                 "matched_skills": ["CAD"],
+                "_prompt_version": PROMPT_VERSION,
             },
         )
     )

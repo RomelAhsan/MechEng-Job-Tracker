@@ -24,6 +24,8 @@ takes the URL and discovers the tenant itself).
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
+from decimal import Decimal
 
 from jobtracker.connectors.base import Connector, RawJob
 from jobtracker.schemas.company import CompanyConfig
@@ -31,6 +33,16 @@ from jobtracker.services.apify_budget import ApifyBudget
 from jobtracker.settings import Settings, get_settings
 
 logger = logging.getLogger("jobtracker.connectors.apify_workday")
+
+
+def _field(obj: object, *names: str) -> object:
+    """Read a field from an apify-client v3 model or a plain dict."""
+    for name in names:
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        if hasattr(obj, name):
+            return getattr(obj, name)
+    return None
 
 
 class ApifyWorkdayConnector(Connector):
@@ -105,38 +117,38 @@ class ApifyWorkdayConnector(Connector):
             return []
 
         actor_id = self._settings.apify_workday_actor.replace("~", "/")
-        run_input = {"startUrls": [{"url": careers_url}], "maxItems": 1000}
-        # Cap the bill (0.0 => free Actors only) AND bound how long we BLOCK on a
-        # single Actor run. Without wait_secs the client blocks until the run
-        # finishes, so 28 serial Workday fetches hung the whole poll step past an
-        # hour. We wait a bounded time; if the run is not done we move on (it is
-        # retried next poll) rather than stalling every other company.
-        call_options = {
-            "maxTotalChargeUsd": max_charge,
-            "wait_secs": int(self._settings.apify_run_wait_secs),
+        # Input per the Actor's published schema (startUrls + proxyUrls are
+        # required; pagination 0 = all pages; details = full descriptions).
+        run_input = {
+            "startUrls": [{"url": careers_url}],
+            "pagination": 0,
+            "details": True,
+            "proxyUrls": {"useApifyProxy": True},
         }
-
         try:
             run = client.actor(actor_id).call(  # type: ignore[attr-defined]
-                run_input=run_input, **call_options
+                run_input=run_input,
+                # Hard bill cap (0 = free Actors only) and a bounded wait so a
+                # slow third-party run never stalls the whole poll.
+                max_total_charge_usd=Decimal(str(max_charge)),
+                wait_duration=timedelta(seconds=int(self._settings.apify_run_wait_secs)),
             )
         except Exception as exc:  # noqa: BLE001 - one board failing is fail-soft.
             logger.warning("Apify run failed for %s: %s", company.id, exc)
             return []
-        # A run that did not finish within wait_secs is skipped this poll.
-        if not run or (run.get("status") not in (None, "SUCCEEDED")):
+        status = _field(run, "status")
+        if not run or (status not in (None, "SUCCEEDED")):
             logger.info(
                 "Apify run for %s not finished (status=%s); will retry next poll.",
                 company.id,
-                (run or {}).get("status"),
+                status,
             )
             return []
 
-        # Record actual usage (for a free Actor this is 0.0).
-        charged = float((run or {}).get("usageTotalUsd") or 0.0)
+        charged = float(_field(run, "usage_total_usd", "usageTotalUsd") or 0.0)
         self._budget.record(charged)
 
-        dataset_id = (run or {}).get("defaultDatasetId")
+        dataset_id = _field(run, "default_dataset_id", "defaultDatasetId")
         if not dataset_id:
             return []
         try:

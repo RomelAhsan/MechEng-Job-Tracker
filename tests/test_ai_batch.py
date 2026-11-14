@@ -166,3 +166,56 @@ def test_parse_strict_json_array_skips_malformed_elements() -> None:
 def test_parse_strict_json_array_rejects_non_array() -> None:
     with pytest.raises(ai_service.AiServiceError):
         ai_service.parse_strict_json_array(json.dumps({"index": 0}))
+
+
+class VerifyProvider(BatchProvider):
+    """Second-opinion fake: rejects the job indices in ``reject``."""
+
+    def __init__(self, reject: set[int]) -> None:
+        super().__init__()
+        self.reject = reject
+
+    def analyze(self, prompt: str) -> AIResult:
+        self.calls += 1
+        n = prompt.count("--- JOB ")
+        arr = []
+        for i in range(n):
+            v = _verdict(i, "skip" if i in self.reject else "apply")
+            v["failed_rules"] = [2] if i in self.reject else []
+            arr.append(v)
+        return AIResult(text=json.dumps(arr), available=True, provider="verify")
+
+
+def test_second_opinion_must_agree_before_ai_job_is_shown(session: Session) -> None:
+    from jobtracker.screen.ai_verdict import ai_eligibility
+
+    _seed(session, 2)
+    for job in session.query(Job):
+        job.screening_tier = "ai"
+    session.flush()
+    settings = Settings(
+        user_file="config/user.yaml",
+        ai_batch_size=12,
+        gemini_api_key="fake",
+        gemini_verify_model="verify-model",
+    )
+    ai_service.analyze_jobs_batch(
+        session, ["job-0", "job-1"], provider=BatchProvider(), settings=settings
+    )
+    rows = {r.job_id: r for r in session.query(AiAnalysisCache)}
+    assert not ai_service.has_current_verification(rows["job-0"].result)
+
+    verifier = VerifyProvider(reject={1})
+    done = ai_service.verify_jobs(
+        session, ["job-0", "job-1"], settings=settings, provider=verifier
+    )
+    assert done == 2 and verifier.calls == 1
+    rows = {r.job_id: r for r in session.query(AiAnalysisCache)}
+    assert ai_service.has_current_verification(rows["job-0"].result)
+    assert ai_eligibility(rows["job-0"].result) is True
+    assert ai_eligibility(rows["job-1"].result) is False
+
+    # Already verified -> no new request.
+    assert ai_service.verify_jobs(
+        session, ["job-0", "job-1"], settings=settings, provider=verifier
+    ) == 0

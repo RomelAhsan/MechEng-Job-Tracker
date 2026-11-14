@@ -92,7 +92,9 @@ def test_free_actor_cap_is_passed_to_call(tmp_path) -> None:
     )
     conn.fetch(_company())
     # The bill cap is handed to the Actor call so a paid run can't surprise-bill.
-    assert client._actor.last_opts.get("maxTotalChargeUsd") == 0.0
+    from decimal import Decimal
+
+    assert client._actor.last_opts.get("max_total_charge_usd") == Decimal("0.0")
 
 
 def test_unfinished_run_is_skipped_not_hung(tmp_path) -> None:
@@ -118,7 +120,9 @@ def test_wait_secs_is_passed_to_call(tmp_path) -> None:
         client=client,
     )
     conn.fetch(_company())
-    assert client._actor.last_opts.get("wait_secs") == 45
+    from datetime import timedelta
+
+    assert client._actor.last_opts.get("wait_duration") == timedelta(seconds=45)
 
 
 def test_paid_run_blocked_when_budget_exhausted(tmp_path) -> None:

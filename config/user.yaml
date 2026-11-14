@@ -17,8 +17,12 @@ user:
     - "Canada"
   acceptable_locations_with_sponsorship:
     - "United States"
+  # All three terms are kept so the website's term filter can show any of
+  # them; remove a term here to hide it everywhere.
   available_terms:
+    - "Winter"
     - "Spring"
+    - "Fall"
   preferred_duration_months: 4
   minimum_duration_months: 4
   maximum_duration_months: 4
