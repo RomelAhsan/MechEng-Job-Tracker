@@ -219,3 +219,9 @@ def test_second_opinion_must_agree_before_ai_job_is_shown(session: Session) -> N
     assert ai_service.verify_jobs(
         session, ["job-0", "job-1"], settings=settings, provider=verifier
     ) == 0
+
+
+def test_parse_array_repairs_trailing_commas() -> None:
+    text = json.dumps([_verdict(0)])[:-2] + ",}]"
+    parsed = ai_service.parse_strict_json_array(text)
+    assert parsed and parsed[0]["index"] == 0

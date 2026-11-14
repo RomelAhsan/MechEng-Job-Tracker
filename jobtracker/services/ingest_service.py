@@ -195,6 +195,13 @@ def _ingest_company(
         logger.info("Company %s requires a fallback connector.", company.id)
         return CompanyRunResult(company_id=company.id, status=REQUIRES_FALLBACK)
 
+    return _process_raw_jobs(session, company, config, raw_jobs)
+
+
+def _process_raw_jobs(
+    session: Session, company: Company, config, raw_jobs: list
+) -> CompanyRunResult:
+    """Normalize, diff, and screen one company's fetched postings."""
     canonical: list[CanonicalJob] = []
     quarantined = 0
     for raw in raw_jobs:
@@ -227,6 +234,55 @@ def _ingest_company(
     )
 
 
+def _is_blocked_error(exc: Exception) -> bool:
+    """True for the Cloudflare 521 Workday returns to blocked datacenter IPs."""
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) == 521
+
+
+class _WorkdayFallback:
+    """Start Apify runs for blocked Workday boards and collect them at the end."""
+
+    def __init__(self) -> None:
+        self._pending: list[tuple[Company, str]] = []
+        self._connector = None
+
+    def _get(self):
+        if self._connector is None:
+            from jobtracker.connectors.apify_workday import ApifyWorkdayConnector
+
+            self._connector = ApifyWorkdayConnector()
+        return self._connector
+
+    def try_start(self, company: Company, exc: Exception) -> bool:
+        if getattr(company, "ats", None) != "workday" or not _is_blocked_error(exc):
+            return False
+        try:
+            connector = self._get()
+            if not connector.available:
+                return False
+            run_id = connector.start_student_search(_config_from_company(company))
+        except Exception:  # noqa: BLE001
+            logger.exception("Apify fallback start failed for %s", company.id)
+            return False
+        if run_id:
+            self._pending.append((company, run_id))
+        return True
+
+    def collect_all(self):
+        if not self._pending:
+            return
+        import time
+
+        settings = get_settings()
+        deadline = time.monotonic() + int(settings.apify_fallback_wait_secs)
+        for company, run_id in self._pending:
+            remaining = max(1, int(deadline - time.monotonic()))
+            raw_jobs = self._get().collect(run_id, wait_secs=remaining)
+            if raw_jobs:
+                yield company, raw_jobs
+
+
 def run(
     session: Session,
     http: HttpClient,
@@ -252,19 +308,43 @@ def run(
         companies = _cap_apify_companies(session, companies)
 
     summary = RunSummary()
+    # Workday first, so any Apify fallback runs started for blocked boards get
+    # the rest of the poll to finish in the background.
+    companies = sorted(companies, key=lambda c: getattr(c, "ats", "") != "workday")
+    fallback = _WorkdayFallback()
     for company in companies:
         try:
             result = _ingest_company(session, company, http)
             session.commit()
         except Exception as exc:  # noqa: BLE001 - fail-soft: isolate per company.
             session.rollback()
-            logger.exception("Ingestion failed for company %s", company.id)
+            if fallback.try_start(company, exc):
+                logger.warning(
+                    "Workday blocked this runner for %s (%s); fetching via Apify.",
+                    company.id,
+                    exc,
+                )
+            else:
+                logger.exception("Ingestion failed for company %s", company.id)
             _record_error(session, company.id, repr(exc))
             session.commit()
             result = CompanyRunResult(
                 company_id=company.id, status="error", error=repr(exc)
             )
         summary.companies.append(result)
+
+    for company, raw_jobs in fallback.collect_all():
+        try:
+            result = _process_raw_jobs(
+                session, company, _config_from_company(company), raw_jobs
+            )
+            session.commit()
+            summary.companies = [
+                r for r in summary.companies if r.company_id != company.id
+            ] + [result]
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            logger.exception("Apify fallback ingest failed for %s", company.id)
 
     logger.info(
         "Ingestion run complete: %d companies, %d new, %d changed, %d errors",

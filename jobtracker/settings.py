@@ -119,6 +119,13 @@ class Settings(BaseSettings):
     #: Max number of apify_workday companies polled PER run, so a backlog of
     #: slow third-party fetches is spread across polls instead of stalling one.
     apify_max_companies_per_run: int = 8
+    #: Workday boards that block the CI runner (HTTP 521) are fetched through
+    #: Apify at most once per this many hours each, to stay in the free credit.
+    apify_fallback_interval_hours: float = 12.0
+    #: Do not start an Apify run when today's rolled allowance is below this.
+    apify_min_allowance_usd: float = 0.05
+    #: Total seconds the poll waits for all started Apify runs at the end.
+    apify_fallback_wait_secs: int = 300
 
     # HTTP / connectors
     http_timeout: float = 30.0
