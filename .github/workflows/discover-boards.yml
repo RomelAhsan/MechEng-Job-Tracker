@@ -18,9 +18,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install httpx
+      - run: pip install httpx "apify-client>=3"
       - run: python scripts/discover_boards.py
+      # Tiny Apify runs (~$0.001 each) to find the start-URL form the Workday
+      # Actor accepts. Skipped when no APIFY_TOKEN secret is set.
+      - run: python scripts/apify_probe.py
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        continue-on-error: true
       - uses: actions/upload-artifact@v4
         with:
           name: discovery
-          path: output/discovery.json
+          path: |
+            output/discovery.json
+            output/apify_probe.json
