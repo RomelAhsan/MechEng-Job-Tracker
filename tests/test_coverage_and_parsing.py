@@ -202,3 +202,16 @@ def test_ai_failed_rules_force_not_eligible() -> None:
                            "failed_rules": [7]}) is False
     assert ai_eligibility({"eligible": True, "recommendation": "apply",
                            "failed_rules": []}) is True
+
+
+def test_workday_links_get_locale_prefix() -> None:
+    from jobtracker.connectors.workday import with_locale
+
+    url = "https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite/job/Rochester/X_R1"
+    assert with_locale(url) == (
+        "https://gevernova.wd5.myworkdayjobs.com/en-US/Vernova_ExternalSite/job/Rochester/X_R1"
+    )
+    assert with_locale(with_locale(url)) == with_locale(url)
+    assert with_locale("https://boards.greenhouse.io/x/jobs/1") == (
+        "https://boards.greenhouse.io/x/jobs/1"
+    )

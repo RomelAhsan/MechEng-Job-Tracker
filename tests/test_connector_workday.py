@@ -80,9 +80,9 @@ def test_workday_paginates_and_fetches_detail_body() -> None:
     first = by_id["aaaa1111bbbb2222cccc3333"]
     assert first.title == "Mechanical Design Engineer Intern"
     assert "SolidWorks" in first.description_html
-    # Canonical public apply URL from externalUrl.
+    # Canonical public apply URL from externalUrl, with the /en-US/ locale.
     assert first.application_url == (
-        "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/"
+        "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/job/"
         "US-CA-Santa-Clara/Mechanical-Design-Engineer-Intern_JR1001"
     )
     assert first.source_url == first.application_url
@@ -118,7 +118,7 @@ def test_workday_application_url_falls_back_to_constructed_public_url() -> None:
 
     urls = {r.application_url for r in raw_jobs}
     assert (
-        "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/"
+        "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/job/"
         "US-CA-Santa-Clara/Mechanical-Design-Engineer-Intern_JR1001" in urls
     )
 
