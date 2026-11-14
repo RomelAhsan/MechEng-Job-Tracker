@@ -24,6 +24,7 @@ takes the URL and discovers the tenant itself).
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -297,12 +298,19 @@ class ApifyWorkdayConnector(Connector):
         title = str(item.get("title") or item.get("jobTitle") or "").strip()
         if not sid or not title:
             return None
-        url = item.get("url") or item.get("externalUrl") or item.get("applyUrl")
+        url = item.get("externalUrl") or item.get("url") or item.get("applyUrl")
+        if isinstance(url, str):
+            # The Actor reports the JSON API address
+            # (".../wday/cxs/{tenant}/{site}/job/..."); link the public page.
+            url = re.sub(r"/wday/cxs/[^/]+/", "/", url)
         return RawJob(
             source_job_id=sid,
             title=title,
             location=str(
-                item.get("location") or item.get("locationsText") or ""
+                item.get("location")
+                or item.get("locationText")
+                or item.get("locationsText")
+                or ""
             ).strip(),
             description_html=str(
                 item.get("descriptionHtml") or item.get("description") or ""
