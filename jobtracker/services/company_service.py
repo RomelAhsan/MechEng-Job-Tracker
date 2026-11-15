@@ -27,6 +27,7 @@ from jobtracker.detect.diff import detect_changes
 from jobtracker.normalize.normalizer import QuarantineError, normalize
 from jobtracker.schemas.company import ATSType, CompanyConfig
 from jobtracker.services.ingest_service import quarantine_raw
+from jobtracker.settings import get_settings
 
 logger = logging.getLogger("jobtracker.services.company")
 
@@ -372,6 +373,14 @@ def add_from_url(
 
     config = _config_from_company(company)
     connector = get_connector(company.ats, http)
+    # Bound the baseline fetch the same way the add-time poll is bounded: a huge
+    # board (e.g. RTX Phenom ~4600 postings, each needing a per-posting detail
+    # request) would otherwise make even the add's baseline import run for a long
+    # time. The company is still added; the scheduled poll fetches the full
+    # board. ``None`` leaves it unbounded.
+    cap = get_settings().add_poll_max_postings
+    if cap is not None:
+        connector.max_postings = cap
     try:
         raw_jobs: list[RawJob] = connector.fetch(config)
     except Exception as exc:  # noqa: BLE001 - classify, then re-raise if genuine.

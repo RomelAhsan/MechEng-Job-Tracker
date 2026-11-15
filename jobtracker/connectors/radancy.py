@@ -124,6 +124,11 @@ class RadancyConnector(Connector):
             return []
 
         search_url = f"https://{host}/en/search-jobs/results"
+        # ``max_postings`` (set only for the one-time add-time poll) caps how
+        # many postings we fetch full descriptions for, so a large board does
+        # not issue a per-posting detail request for thousands of jobs and hold
+        # the add. The scheduled poll leaves it ``None`` and fetches everything.
+        cap = self.max_postings if isinstance(self.max_postings, int) else None
         raw_jobs: list[RawJob] = []
         seen: set[str] = set()
         page = 1
@@ -142,6 +147,14 @@ class RadancyConnector(Connector):
                 raw = self._detail(url, title, location)
                 if raw is not None:
                     raw_jobs.append(raw)
+                if cap is not None and len(raw_jobs) >= cap:
+                    logger.info(
+                        "Radancy board for %s reached the add-time cap of %d "
+                        "postings; the scheduled poll will fetch the rest.",
+                        company.id,
+                        cap,
+                    )
+                    return raw_jobs
             if isinstance(total_pages, int) and page >= total_pages:
                 break
             page += 1

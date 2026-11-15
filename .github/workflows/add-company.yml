@@ -29,9 +29,15 @@ on:
 permissions:
   contents: write
 
-# Never let two adds (or an add and nothing) race over the same database.
+# Serialize adds so two runs never race the same cached SQLite DB, but NEVER
+# cancel an in-flight add (the user hit legitimate RTX adds being cancelled).
+# cancel-in-progress is false so a second add QUEUES behind the first instead of
+# cancelling it. The group is keyed by the company input so adds of DIFFERENT
+# companies run without contending, while repeated adds of the SAME company
+# still serialize (protecting the DB from racing identical writes). The input is
+# used verbatim as a group suffix (GitHub treats it as data, not a shell).
 concurrency:
-  group: add-company
+  group: add-company-${{ github.event.inputs.company }}
   cancel-in-progress: false
 
 jobs:
@@ -105,6 +111,11 @@ jobs:
       # which we capture into a step output for the summary.
       - name: Add the company and poll it
         id: add
+        # Belt-and-suspenders bound: the add-time poll is already capped in the
+        # backend (ADD_POLL_MAX_POSTINGS), and the add (companies.yaml) is
+        # committed before the poll, so this step cannot lose the add even if it
+        # hits the limit. Keeps a single huge board from holding the whole job.
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           COMPANY="${{ github.event.inputs.company }}"
@@ -118,6 +129,14 @@ jobs:
           SLUG="$(grep -oE '^COMPANY_ID=.*' add.log | tail -n1 | cut -d= -f2-)"
           echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
           echo "Added company slug: ${SLUG}"
+          # The backend prints "is already tracked" and exits 0 when the company
+          # already exists; surface that as a step output so the summary can say
+          # so and the (correct) empty commit below is expected, not an error.
+          if grep -q 'is already tracked' add.log; then
+            echo "already_tracked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_tracked=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # Commit the updated config back to main so the scheduled poller tracks it.
       # Only commits when the file actually changed; never commits secrets or
@@ -146,6 +165,20 @@ jobs:
 
       - name: Report source health
         run: python -m jobtracker health
+
+      # Human-readable summary. For an already-tracked company this reports the
+      # graceful no-op (no new entry, no commit) rather than looking like a
+      # silent success.
+      - name: Summarize the result
+        if: always()
+        run: |
+          if [ "${{ steps.add.outputs.already_tracked }}" = "true" ]; then
+            echo "### Company already tracked: ${{ steps.add.outputs.slug }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "No duplicate was added and no config change was committed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Added company: ${{ steps.add.outputs.slug }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "The immediate poll is bounded; the scheduled poll fetches the full board." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Verify the DB is intact, THEN save it, so a corrupt file is never cached.
       - name: Save the job database

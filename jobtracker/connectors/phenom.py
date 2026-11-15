@@ -181,6 +181,11 @@ class PhenomConnector(Connector):
             return []
 
         url = f"https://{host}/widgets"
+        # ``max_postings`` (set only for the one-time add-time poll) caps how
+        # many postings we fetch full descriptions for, so a 4600-job board does
+        # not issue thousands of per-posting detail calls and hold the add. The
+        # scheduled poll leaves it ``None`` and fetches everything.
+        cap = self.max_postings if isinstance(self.max_postings, int) else None
         raw_jobs: list[RawJob] = []
         seen: set[str] = set()
         offset = 0
@@ -197,6 +202,14 @@ class PhenomConnector(Connector):
                 seen.add(raw.source_job_id)
                 self._attach_detail(url, host, raw)
                 raw_jobs.append(raw)
+                if cap is not None and len(raw_jobs) >= cap:
+                    logger.info(
+                        "Phenom board for %s reached the add-time cap of %d "
+                        "postings; the scheduled poll will fetch the rest.",
+                        company.id,
+                        cap,
+                    )
+                    return raw_jobs
             offset += _PAGE_SIZE
             if not isinstance(total, int) or offset >= total:
                 break

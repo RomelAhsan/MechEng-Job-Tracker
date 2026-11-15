@@ -146,6 +146,19 @@ class Settings(BaseSettings):
     scheduler_medium_interval_minutes: int = 45
     scheduler_low_interval_minutes: int = 60
 
+    # Add-company immediate poll bound (FEAT-004). The one-time poll fired right
+    # after `add-company --poll` is a convenience so the new company's jobs show
+    # up without waiting for the scheduled poll; the scheduled poll still does
+    # the FULL fetch. A huge board (e.g. RTX Phenom ~4600 postings, each needing
+    # a per-posting detail request) would otherwise make that add-time poll run
+    # for a very long time and hold the CI job. This caps how many postings the
+    # add-time poll fetches for the newly-added company so it stays bounded. The
+    # add itself (companies.yaml) is always persisted regardless of this bound.
+    #: Max postings the add-time immediate poll fetches for the new company
+    #: (None = unbounded). Only the add-time poll is bounded; the scheduled
+    #: poller is unchanged. Kept small so the one-time convenience poll is quick.
+    add_poll_max_postings: int | None = 200
+
 
 def get_settings() -> Settings:
     """Return a freshly loaded settings instance."""

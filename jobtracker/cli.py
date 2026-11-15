@@ -135,11 +135,26 @@ def _persist_and_poll(session: Session, http, company_id: str, poll: bool) -> No
     # Persist the YAML now so it survives a poll failure below.
     session.commit()
     if poll:
+        # The immediate poll is a one-time convenience; the scheduled poll does
+        # the full fetch. Bound it so a huge board (e.g. RTX Phenom ~4600
+        # postings) cannot hold the add. The add (companies.yaml) is already
+        # committed above, so it survives regardless of the poll outcome.
+        cap = get_settings().add_poll_max_postings
+        if cap is not None:
+            typer.echo(
+                f"Immediate poll of {company_id} is bounded to at most {cap} "
+                "postings; the scheduled poll will fetch the rest."
+            )
         # ingest_service.run is already fail-soft per company, but guard here so
         # a hard failure (DB, unexpected error) can never exit non-zero and lose
         # the add we just persisted and printed.
         try:
-            summary = ingest_service.run(session, http, company_ids=[company_id])
+            summary = ingest_service.run(
+                session,
+                http,
+                company_ids=[company_id],
+                max_postings_per_company=cap,
+            )
             typer.echo(
                 f"Polled {company_id}: {summary.total_new} new, "
                 f"{summary.total_changed} changed, {summary.errors} errors."
