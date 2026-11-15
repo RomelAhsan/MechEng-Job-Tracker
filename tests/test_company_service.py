@@ -5,6 +5,7 @@ All connector interaction is faked; no network is used.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,22 @@ class _FakeConnector:
 
     def fetch(self, company: CompanyConfig) -> list[RawJob]:
         return list(self._raw_jobs)
+
+
+class _RaisingConnector:
+    """Connector whose ``fetch`` always raises a given exception."""
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def fetch(self, company: CompanyConfig) -> list[RawJob]:
+        raise self._exc
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", "https://board.example/jobs")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError("boom", request=request, response=response)
 
 
 def _raw(source_job_id: str, title: str) -> RawJob:
@@ -85,6 +102,91 @@ def test_add_from_url_baseline_suppresses_false_new(
     # Baseline import inserts rows but emits NO 'new' events (no false-new).
     assert session.query(Job).count() == 2
     assert session.query(JobEvent).count() == 0
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        _http_status_error(403),  # Phenom / Oracle ORC auth wall to the runner.
+        _http_status_error(429),  # rate limited.
+        _http_status_error(521),  # Cloudflare "web server is down" (Workday).
+        _http_status_error(503),  # transient server error.
+        httpx.ConnectError("no route"),  # transport error.
+    ],
+)
+def test_add_from_url_succeeds_when_board_unreachable(
+    session: Session, monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    """A positively-detected board that is unreachable at add time still adds.
+
+    Phenom (careers.rtx.com) and Oracle ORC return 403, and Workday returns a
+    Cloudflare 521, to the GitHub Actions runner. The company must still be
+    persisted (with a zero-job baseline, so nothing is falsely new); the
+    scheduled poll imports its jobs later.
+    """
+    monkeypatch.setattr(
+        company_service, "get_connector", lambda ats, http: _RaisingConnector(exc)
+    )
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: type("D", (), {"ats": "workday", "board_token": "acme/wd1/ext"})(),
+    )
+
+    result = company_service.add_from_url(
+        session, "https://acme.wd1.myworkdayjobs.com/ext", http=object(), name="Acme"
+    )
+    session.flush()
+
+    # The add succeeded with a zero-job baseline and the row is persisted.
+    assert result.baseline_jobs == 0
+    assert result.ats == "workday"
+    company = session.get(Company, "acme")
+    assert company is not None
+    assert company.enabled is True
+    assert company.active is True
+    # No jobs and (critically) no false-new events.
+    assert session.query(Job).count() == 0
+    assert session.query(JobEvent).count() == 0
+
+
+def test_add_from_url_reraises_non_reachability_errors(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A genuine bug (not a reachability failure) is NOT swallowed."""
+    monkeypatch.setattr(
+        company_service,
+        "get_connector",
+        lambda ats, http: _RaisingConnector(ValueError("parser bug")),
+    )
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: type("D", (), {"ats": "greenhouse", "board_token": "acme"})(),
+    )
+
+    with pytest.raises(ValueError, match="parser bug"):
+        company_service.add_from_url(
+            session, "https://boards.greenhouse.io/acme", http=object(), name="Acme"
+        )
+
+
+def test_add_from_url_fails_clearly_when_ats_not_determinable(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """detect_ats returning the html fallback keeps its clear failure path."""
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: type("D", (), {"ats": "html", "board_token": None})(),
+    )
+
+    with pytest.raises(ValueError, match="Could not detect a supported ATS"):
+        company_service.add_from_url(
+            session, "https://example.com/careers", http=object(), name="Example"
+        )
+    # Nothing was persisted for the unresolved add.
+    assert session.query(Company).count() == 0
 
 
 def test_remove_keeps_history(session: Session) -> None:

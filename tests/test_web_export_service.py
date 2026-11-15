@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
@@ -115,6 +116,30 @@ def test_freshness_boundary_at_14_days(session: Session) -> None:
     ids = {j["job_id"] for j in web_export_service.build_feed(session).payload["jobs"]}
     assert "boundary" in ids
     assert "past" not in ids
+
+
+def test_posted_days_ago_lower_bound_for_workday_30_plus() -> None:
+    # Workday's "Posted 30+ Days Ago" resolves to now-30d (so the freshness
+    # cutoff still hides it). The feed must flag that age as a LOWER BOUND so
+    # the website renders "Posted 30+ days ago" rather than a precise but wrong
+    # "Posted 30 days ago". Exercised via a minimal view: the helper only reads
+    # posted_at / first_seen_at.
+    now = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
+    thirty_plus = SimpleNamespace(
+        posted_at=now - timedelta(days=30), first_seen_at=None
+    )
+    exact_ten = SimpleNamespace(posted_at=now - timedelta(days=10), first_seen_at=None)
+    seen_only = SimpleNamespace(
+        posted_at=None, first_seen_at=now - timedelta(days=40)
+    )
+
+    assert web_export_service.posted_days_ago(thirty_plus, now=now) == 30
+    assert web_export_service.posted_days_ago_is_lower_bound(thirty_plus, now=now) is True
+    # An exact, recent posting date is never a lower bound.
+    assert web_export_service.posted_days_ago_is_lower_bound(exact_ten, now=now) is False
+    # Age derived from first_seen_at (no source posting date) is exact, never
+    # a lower bound, even when old.
+    assert web_export_service.posted_days_ago_is_lower_bound(seen_only, now=now) is False
 
 
 def test_posted_days_ago_prefers_true_posting_date(session: Session) -> None:

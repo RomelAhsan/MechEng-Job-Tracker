@@ -40,11 +40,18 @@ function duration(job: Job): string {
 // "Posted X days ago" from the best-available posting date (true posting date
 // first, then first-seen). The user cares about time since the ACTUAL posting,
 // not when we fetched it.
+//
+// `posted_days_ago_is_lower_bound` marks a date we only know as "at least N
+// days old" -- Workday's "Posted 30+ Days Ago" string, which the backend turns
+// into now-30d so the freshness cutoff still hides it, but whose exact age is
+// unknown. For those we render "Posted 30+ days ago" rather than a precise but
+// wrong "Posted 30 days ago".
 function postedAgo(job: Job): string | null {
   const days = job.posted_days_ago;
   if (days == null) return null;
   if (days <= 0) return "Posted today";
   if (days === 1) return "Posted 1 day ago";
+  if (job.posted_days_ago_is_lower_bound) return `Posted ${days}+ days ago`;
   return `Posted ${days} days ago`;
 }
 
