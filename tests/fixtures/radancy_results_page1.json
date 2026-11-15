@@ -1,0 +1,6 @@
+{
+  "filters": "<div class=\"filters\"></div>",
+  "results": "<section id=\"search-results\" data-total-pages=\"1\" data-total-results=\"2\"><ul><li><a href=\"/en/job/melbourne/mechanical-engineer/4832/90001\" data-job-id=\"90001\"><h2>Mechanical Engineer</h2><span class=\"results-facet job-location job-location-facet\">Melbourne, FL</span></a></li><li><a href=\"/en/job/rochester/systems-engineer/4832/90002\" data-job-id=\"90002\"><h2>Systems Engineer</h2><span class=\"results-facet job-location job-location-facet\">Rochester, NY</span></a></li></ul></section>",
+  "hasJobs": true,
+  "hasContent": true
+}

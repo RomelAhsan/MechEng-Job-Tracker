@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session
 from jobtracker.connectors.base import RawJob
 from jobtracker.connectors.fallback import FallbackConnector
 from jobtracker.connectors.http import HttpClient
-from jobtracker.connectors.registry import detect_ats, get_connector
+from jobtracker.connectors.registry import DetectedATS, detect_ats, get_connector
 from jobtracker.db.models import Company
-from jobtracker.db.repositories import CompanyRepository
+from jobtracker.db.repositories import CompanyRepository, JobRepository
 from jobtracker.detect.diff import detect_changes
 from jobtracker.normalize.normalizer import QuarantineError, normalize
 from jobtracker.schemas.company import ATSType, CompanyConfig
@@ -67,12 +67,18 @@ class SyncResult:
 
 @dataclass
 class AddResult:
-    """Summary of an ``add_from_url`` call."""
+    """Summary of an ``add_from_url`` call.
+
+    ``already_tracked`` is True when the company was already present as an
+    active+enabled row (matched by clean slug / board_token / ats+token); in
+    that case nothing new is created and ``company_id`` is the EXISTING id.
+    """
 
     company_id: str
     ats: str
     board_token: str | None
     baseline_jobs: int
+    already_tracked: bool = False
 
 
 @dataclass
@@ -163,6 +169,119 @@ def sync_from_yaml(session: Session, companies: list[CompanyConfig]) -> SyncResu
     return SyncResult(created=created, updated=updated)
 
 
+#: Known ATS brand names, so a slug like ``l3harris`` humanizes to a nicer
+#: display name where a simple title-case would be wrong.
+_BRAND_NAMES = {
+    "rtx": "RTX",
+    "l3harris": "L3Harris",
+    "honeywell": "Honeywell",
+}
+
+
+def _humanize(slug: str) -> str:
+    """Turn a slug (``acme-robotics``) into a display name (``Acme Robotics``)."""
+    cleaned = slug.strip()
+    if cleaned in _BRAND_NAMES:
+        return _BRAND_NAMES[cleaned]
+    words = [w for w in cleaned.replace("_", "-").split("-") if w]
+    return " ".join(_BRAND_NAMES.get(w, w.capitalize()) for w in words) or cleaned
+
+
+def _registrable_label(url: str) -> str:
+    """Return the second-level-domain label of ``url`` (host fallback).
+
+    e.g. ``https://careers.honeywell.com/foo`` -> ``honeywell``. Strips a
+    leading ``www``/``careers``/``jobs`` subdomain noise and the public suffix
+    so a bare feed/URL yields a clean company label, never the whole URL.
+    """
+    from urllib.parse import urlsplit
+
+    split = urlsplit(url if "//" in url else f"https://{url}")
+    host = (split.netloc or split.path).split("/", 1)[0].lower()
+    host = host.split(":", 1)[0]
+    labels = [label for label in host.split(".") if label]
+    if len(labels) >= 2:
+        # Drop the TLD; the registrable label is the second-to-last part.
+        return labels[-2]
+    return labels[0] if labels else _slugify(url)
+
+
+def _derive_identity(url: str, detected: DetectedATS) -> tuple[str, str]:
+    """Derive a clean ``(slug, display_name)`` from a DetectedATS identity.
+
+    Avoids the old ``_slugify(name or board_token or url)`` fallthrough that
+    produced garbage ids from a raw URL. Rules by ATS:
+
+    * ``oracle`` -> the site number from ``'{origin}|{SITE}'`` (``Honeywell``);
+    * ``phenom`` / ``radancy`` -> the registrable label of the careers host
+      (``careers.rtx.com`` -> ``rtx``, ``careers.l3harris.com`` -> ``l3harris``);
+    * ``greenhouse`` / ``lever`` / ``ashby`` / ``workable`` /
+      ``smartrecruiters`` -> the board slug (``board_token``);
+    * ``workday`` -> the tenant from the ``'tenant/dc/site'`` token;
+    * feeds (rss/sitemap/json_ld) and anything else -> the registrable host
+      label of the URL (NOT the whole URL).
+    """
+    ats = detected.ats
+    token = detected.board_token
+    slug_source: str | None = None
+
+    if ats == ATSType.ORACLE.value and token and "|" in token:
+        slug_source = token.split("|", 1)[1]
+    elif ats in (ATSType.PHENOM.value, ATSType.RADANCY.value):
+        slug_source = _registrable_label(token or url)
+    elif ats in (
+        ATSType.GREENHOUSE.value,
+        ATSType.LEVER.value,
+        ATSType.ASHBY.value,
+        ATSType.WORKABLE.value,
+        ATSType.SMARTRECRUITERS.value,
+    ):
+        slug_source = token
+    elif ats == ATSType.WORKDAY.value and token:
+        slug_source = token.split("/", 1)[0]
+
+    if not slug_source:
+        slug_source = _registrable_label(url)
+
+    slug = _slugify(slug_source)
+    return slug, _humanize(slug)
+
+
+def _find_existing(
+    repo: CompanyRepository,
+    slug: str,
+    detected: DetectedATS,
+    display_name: str,
+) -> Company | None:
+    """Find a company that already covers this board, for duplicate detection.
+
+    Matches, in order of confidence:
+
+    1. the resolved clean ``slug`` (same derived id);
+    2. the same ``board_token`` (regardless of id);
+    3. the same ``ats`` + ``board_token`` pair;
+    4. the same humanized display name on a stub for the same company (so an
+       html stub like ``honeywell-aerospace`` is recognized as Honeywell and
+       superseded, not duplicated).
+
+    Returns the matched row (which may be disabled/inactive) or ``None``.
+    """
+    direct = repo.get(slug)
+    if direct is not None:
+        return direct
+
+    token = detected.board_token
+    name_norm = display_name.strip().lower()
+    for company in repo.list():
+        if token and company.board_token == token:
+            return company
+        if token and company.ats == detected.ats and company.board_token == token:
+            return company
+        if name_norm and (company.name or "").strip().lower() == name_norm:
+            return company
+    return None
+
+
 def add_from_url(
     session: Session,
     url: str,
@@ -195,17 +314,52 @@ def add_from_url(
             f"Could not detect a supported ATS from '{url}'. Please provide the "
             "exact careers/board URL from the company's careers page "
             "(Greenhouse, Lever, Ashby, Workable, Workday, SmartRecruiters, "
-            "SuccessFactors, Phenom, or Oracle Cloud Recruiting)."
+            "SuccessFactors, Phenom, Oracle Cloud Recruiting, or Radancy)."
         )
-    slug = company_id or _slugify(name or detected.board_token or url)
-    display = name or slug
+
+    # Derive a clean id + display name from the detected identity, unless an
+    # explicit --id/--name was supplied (those always win). This replaces the
+    # old ``_slugify(name or board_token or url)`` fallthrough that produced
+    # garbage ids/names from a raw URL (e.g. the oracle careers URL).
+    derived_slug, derived_name = _derive_identity(url, detected)
+    slug = company_id or derived_slug
+    display = name or company_id or derived_name
 
     repo = CompanyRepository(session)
+
+    # Duplicate detection: if an existing company already covers this board,
+    # do not create a second entry. A DISABLED match is re-enabled rather than
+    # rejected. The resolved slug and board_token are the identity signals; we
+    # also match the humanized name/host so an html stub (e.g.
+    # 'honeywell-aerospace') for the same company is treated as the same entry.
+    existing = _find_existing(repo, slug, detected, display)
+    if existing is not None and existing.active and existing.enabled:
+        logger.info(
+            "Company %s already tracked (matched existing id=%s); no duplicate "
+            "created.",
+            slug,
+            existing.id,
+        )
+        job_count = len(JobRepository(session).list_for_company(existing.id))
+        return AddResult(
+            company_id=existing.id,
+            ats=existing.ats,
+            board_token=existing.board_token,
+            baseline_jobs=job_count,
+            already_tracked=True,
+        )
+
     now = _now()
-    company = repo.get(slug)
-    if company is None:
-        company = Company(id=slug, active=True, created_at=now)
-        repo.add(company)
+    if existing is not None:
+        # Same company but disabled/inactive: re-enable the existing row in
+        # place (keep its id/history) rather than creating a parallel entry.
+        company = existing
+        slug = existing.id
+    else:
+        company = repo.get(slug)
+        if company is None:
+            company = Company(id=slug, active=True, created_at=now)
+            repo.add(company)
     company.name = display
     company.ats = detected.ats
     company.board_token = detected.board_token

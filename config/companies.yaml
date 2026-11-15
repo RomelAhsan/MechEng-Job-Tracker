@@ -459,12 +459,15 @@ companies:
   itar_restricted: true
 - id: rtx-raytheon
   name: RTX (Raytheon)
-  ats: html
+  ats: phenom
+  board_token: careers.rtx.com
   careers_url: https://careers.rtx.com
   enabled: true
   priority: low
   locations: []
-  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  notes: Verified live Phenom People board (POST careers.rtx.com/widgets); defense/aerospace.
+    ITAR roles filtered per-posting. Pratt & Whitney Canada shares this same board
+    (see pratt-whitney-canada stub).
   itar_restricted: true
 - id: general-dynamics
   name: General Dynamics
@@ -477,12 +480,14 @@ companies:
   itar_restricted: true
 - id: l3harris
   name: L3Harris Technologies
-  ats: html
+  ats: radancy
+  board_token: careers.l3harris.com
   careers_url: https://careers.l3harris.com
   enabled: true
   priority: low
   locations: []
-  notes: Public supported ATS not confirmed. Fallback until a connector exists.
+  notes: Verified live Radancy/TalentBrew board (GET careers.l3harris.com/en/search-jobs/results
+    + per-job JobPosting JSON-LD); defense/aerospace. ITAR roles filtered per-posting.
   itar_restricted: true
 - id: joby-aviation
   name: Joby Aviation
@@ -735,8 +740,9 @@ companies:
   priority: low
   locations:
   - Canada
-  notes: Canadian aerospace (RTX); public supported ATS not confirmed. Fallback until
-    a connector exists.
+  notes: Canadian aerospace (RTX); served from the same Phenom board as RTX (see id
+    'rtx-raytheon', careers.rtx.com/widgets), so it is kept as a pointer stub to avoid
+    ingesting the same postings twice. Not fetched separately.
 - id: bruce-power
   name: Bruce Power
   ats: workday
@@ -930,8 +936,9 @@ companies:
   priority: low
   locations:
   - Canada
-  notes: No public job feed found yet (not Workday-CXS / SuccessFactors / Greenhouse
-    / Lever / Ashby). Kept as a documented stub; not fetched.
+  notes: Not connector-backed - the careers sitemap exposes only content pages (early-careers,
+    job-areas, locations), no per-job JobPosting URLs, so there is no reliable public
+    feed to fetch. Kept as a documented stub; not fetched.
 - id: wsp
   name: WSP
   ats: html
@@ -940,8 +947,10 @@ companies:
   priority: low
   locations:
   - Canada
-  notes: No public job feed found yet (not Workday-CXS / SuccessFactors / Greenhouse
-    / Lever / Ashby). Kept as a documented stub; not fetched.
+  notes: Not connector-backed - the careers site returns a Cloudflare 403 challenge
+    to non-browser clients and its ATS cannot be determined from here. Add it via
+    its careers URL once the real board link is known. Kept as a documented stub;
+    not fetched.
 - id: stantec
   name: Stantec
   ats: html
@@ -950,8 +959,9 @@ companies:
   priority: low
   locations:
   - Canada
-  notes: No public job feed found yet (not Workday-CXS / SuccessFactors / Greenhouse
-    / Lever / Ashby). Kept as a documented stub; not fetched.
+  notes: Not connector-backed - the careers sitemap lists ~7000 job URLs but each
+    job page is JS-rendered with no JSON-LD JobPosting to parse, so there is no reliable
+    public feed to fetch. Kept as a documented stub; not fetched.
 - id: hatch
   name: Hatch
   ats: successfactors
@@ -1213,26 +1223,17 @@ companies:
   notes: Aerospace (RTX); careers page 403s non-browser clients and loads via JS.
     Public supported ATS not confirmed. Fallback until a connector exists.
   itar_restricted: true
-- id: honeywell-aerospace
-  name: Honeywell Aerospace
-  ats: html
-  careers_url: https://careers.honeywell.com
+- id: honeywell
+  name: Honeywell
+  ats: oracle
+  board_token: https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell
+  careers_url: https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell
   enabled: true
-  priority: low
-  locations:
-  - Canada
-  notes: No public job feed found yet (not Workday-CXS / SuccessFactors / Greenhouse
-    / Lever / Ashby). Kept as a documented stub; not fetched.
-- id: l3harris-technologies
-  name: L3Harris Technologies
-  ats: html
-  careers_url: https://careers.l3harris.com/en
-  enabled: true
-  priority: low
-  locations:
-  - Canada
-  notes: Defense/aerospace; careers board loads via JS, public ATS tenant not discoverable
-    without scraping. Fallback until a connector exists.
+  priority: medium
+  locations: []
+  notes: Verified live Oracle Cloud Recruiting (ORC) board (recruitingCEJobRequisitions
+    REST API, site Honeywell); defense/aerospace. ITAR roles filtered per-posting.
+  itar_restricted: true
 - id: gdms-canada
   name: General Dynamics Mission Systems-Canada
   ats: html
@@ -1615,13 +1616,3 @@ companies:
   - Canada
   notes: Canadian robotics; careers page uses BambooHR, which is not a supported connector.
     Fallback until a BambooHR connector exists.
-- id: https-ibqbjb-fa-ocs-oraclecloud-com-honeywell
-  name: https-ibqbjb-fa-ocs-oraclecloud-com-honeywell
-  ats: oracle
-  board_token: https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell
-  careers_url: https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell
-  enabled: true
-  priority: medium
-  check_interval_minutes: null
-  locations: []
-  notes: null

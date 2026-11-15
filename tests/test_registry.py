@@ -7,6 +7,7 @@ from jobtracker.connectors.feed import JsonLdConnector, RssConnector, SitemapCon
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.oracle import OracleConnector
 from jobtracker.connectors.phenom import PhenomConnector
+from jobtracker.connectors.radancy import RadancyConnector
 from jobtracker.connectors.registry import detect_ats, get_connector, is_supported
 from jobtracker.connectors.workable import WorkableConnector
 from jobtracker.connectors.workday import WorkdayConnector
@@ -88,6 +89,19 @@ def test_detect_ats_phenom_known_host() -> None:
     result = detect_ats("https://careers.rtx.com/global/en/home")
     assert result.ats == ATSType.PHENOM.value
     assert result.board_token == "careers.rtx.com"
+
+
+def test_detect_ats_radancy() -> None:
+    result = detect_ats("https://careers.l3harris.com/en")
+    assert result.ats == ATSType.RADANCY.value
+    assert result.board_token == "careers.l3harris.com"
+
+
+def test_radancy_connector_registered() -> None:
+    client = _client()
+    assert is_supported(ATSType.RADANCY.value)
+    assert isinstance(get_connector(ATSType.RADANCY.value, client), RadancyConnector)
+    client.close()
 
 
 def test_detect_ats_unknown_is_html() -> None:

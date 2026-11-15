@@ -189,6 +189,167 @@ def test_add_from_url_fails_clearly_when_ats_not_determinable(
     assert session.query(Company).count() == 0
 
 
+def _detected(ats: str, board_token: str | None):
+    return type("D", (), {"ats": ats, "board_token": board_token})()
+
+
+def test_add_from_url_derives_clean_identity_oracle(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An Oracle careers URL with no name yields id 'honeywell', name 'Honeywell'."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: _detected(
+            "oracle", "https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell"
+        ),
+    )
+
+    result = company_service.add_from_url(
+        session,
+        "https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell",
+        http=object(),
+    )
+    assert result.company_id == "honeywell"
+    assert session.get(Company, "honeywell").name == "Honeywell"
+
+
+def test_add_from_url_derives_clean_identity_phenom(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Phenom careers host with no name yields id 'rtx' (not the raw URL)."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service, "detect_ats", lambda url: _detected("phenom", "careers.rtx.com")
+    )
+
+    result = company_service.add_from_url(
+        session, "https://careers.rtx.com/global/en/home", http=object()
+    )
+    assert result.company_id == "rtx"
+    assert session.get(Company, "rtx").name == "RTX"
+
+
+def test_add_from_url_derives_clean_identity_greenhouse(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Greenhouse uses the board slug (board_token) for the id."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service, "detect_ats", lambda url: _detected("greenhouse", "acme")
+    )
+
+    result = company_service.add_from_url(
+        session, "https://boards.greenhouse.io/acme", http=object()
+    )
+    assert result.company_id == "acme"
+    assert session.get(Company, "acme").name == "Acme"
+
+
+def test_add_from_url_never_uses_raw_url_as_id(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A feed URL with no name falls back to the host label, never the URL."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: _detected("sitemap", "https://careers.honeywell.com/sitemap.xml"),
+    )
+
+    result = company_service.add_from_url(
+        session, "https://careers.honeywell.com/sitemap.xml", http=object()
+    )
+    assert result.company_id == "honeywell"
+    assert "https" not in result.company_id
+
+
+def test_add_from_url_duplicate_returns_already_tracked(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding the same board twice returns already_tracked and adds no 2nd row."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service, "detect_ats", lambda url: _detected("greenhouse", "acme")
+    )
+
+    first = company_service.add_from_url(
+        session, "https://boards.greenhouse.io/acme", http=object()
+    )
+    session.flush()
+    assert first.already_tracked is False
+
+    second = company_service.add_from_url(
+        session, "https://boards.greenhouse.io/acme", http=object()
+    )
+    session.flush()
+
+    assert second.already_tracked is True
+    assert second.company_id == "acme"
+    assert session.query(Company).count() == 1
+
+
+def test_add_from_url_reenables_disabled_company(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-adding a disabled company re-enables it rather than rejecting."""
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service, "detect_ats", lambda url: _detected("greenhouse", "acme")
+    )
+
+    company_service.add_from_url(session, "https://boards.greenhouse.io/acme", http=object())
+    session.flush()
+    company_service.disable(session, "acme")
+    assert session.get(Company, "acme").enabled is False
+
+    result = company_service.add_from_url(
+        session, "https://boards.greenhouse.io/acme", http=object()
+    )
+    session.flush()
+
+    assert result.already_tracked is False
+    assert session.get(Company, "acme").enabled is True
+    assert session.query(Company).count() == 1
+
+
+def test_add_from_url_supersedes_matching_html_stub(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding Honeywell via Oracle when a same-name html stub exists merges them."""
+    stub = Company(
+        id="honeywell-aerospace",
+        name="Honeywell",
+        ats="html",
+        active=True,
+        enabled=True,
+    )
+    session.add(stub)
+    session.flush()
+
+    monkeypatch.setattr(company_service, "get_connector", lambda ats, http: _FakeConnector([]))
+    monkeypatch.setattr(
+        company_service,
+        "detect_ats",
+        lambda url: _detected(
+            "oracle", "https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell"
+        ),
+    )
+
+    result = company_service.add_from_url(
+        session,
+        "https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell",
+        http=object(),
+    )
+    session.flush()
+
+    # Matched the existing stub by humanized name; no parallel entry created.
+    assert result.already_tracked is True
+    assert result.company_id == "honeywell-aerospace"
+    assert session.query(Company).count() == 1
+
+
 def test_remove_keeps_history(session: Session) -> None:
     company_service.sync_from_yaml(session, [_config()])
     session.add(
