@@ -24,6 +24,10 @@ export interface Job {
   // Whole days since the best-available posting date (true posting date first,
   // then first-seen). null when the age cannot be determined.
   posted_days_ago: number | null;
+  // True when the age is only a lower bound (Workday "Posted 30+ Days Ago"):
+  // posted_days_ago is then "at least" that many days, so the card renders
+  // "Posted 30+ days ago" rather than a precise but wrong exact count.
+  posted_days_ago_is_lower_bound?: boolean;
   first_seen_at: string | null;
   first_seen_ago: string | null;
   source_last_checked_at: string | null;

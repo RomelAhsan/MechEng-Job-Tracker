@@ -14,8 +14,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy.orm import Session
 
+from jobtracker.connectors.base import RawJob
 from jobtracker.connectors.fallback import FallbackConnector
 from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.registry import detect_ats, get_connector
@@ -23,10 +25,32 @@ from jobtracker.db.models import Company
 from jobtracker.db.repositories import CompanyRepository
 from jobtracker.detect.diff import detect_changes
 from jobtracker.normalize.normalizer import QuarantineError, normalize
-from jobtracker.schemas.company import CompanyConfig
+from jobtracker.schemas.company import ATSType, CompanyConfig
 from jobtracker.services.ingest_service import quarantine_raw
 
 logger = logging.getLogger("jobtracker.services.company")
+
+#: ATS types that mean "could not positively identify a real board" -- the
+#: html fallback (and anything without a real connector) is the existing
+#: not-determinable path, which must still fail clearly when adding by URL.
+_UNDETECTED_ATS = {ATSType.HTML.value}
+
+
+def _is_reachability_error(exc: Exception) -> bool:
+    """True when ``exc`` is a transient/reachability failure, not a parse bug.
+
+    Covers the auth-wall / rate-limit / server / Cloudflare cases that stop us
+    reaching a board at add time but do NOT mean the board is fake: HTTP 403 /
+    429 / any 5xx (Cloudflare's 521 "web server is down" included), plus
+    network/transport errors. These are exactly the responses Phenom
+    (careers.rtx.com), Oracle ORC (oraclecloud.com), and Workday (521) return to
+    the GitHub Actions runner. When the ATS was positively detected we still add
+    the company; the scheduled poll picks the jobs up later.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status in (403, 429) or 500 <= status <= 599
+    return isinstance(exc, httpx.TransportError)
 
 
 def _now() -> datetime:
@@ -152,8 +176,27 @@ def add_from_url(
 
     The baseline import runs the full detection pass with ``baseline=True`` so
     the company's existing postings are marked seen rather than false-new.
+
+    Two distinct failure modes are handled differently:
+
+    * **ATS not determinable** -- ``detect_ats`` returns the ``html`` fallback
+      (no real board recognized). This is a genuine "give me a real careers
+      URL" case and raises :class:`ValueError` with a clear message.
+    * **ATS detected but board temporarily unreachable** -- the board was
+      positively identified but the baseline ``fetch`` hits an auth wall / rate
+      limit / server error (403/429/5xx incl. Cloudflare 521) or a transport
+      error. The company is STILL added and persisted with a zero-job baseline
+      (so nothing is falsely marked new); the scheduled poll picks the jobs up
+      later. See :func:`_is_reachability_error`.
     """
     detected = detect_ats(url)
+    if detected.ats in _UNDETECTED_ATS:
+        raise ValueError(
+            f"Could not detect a supported ATS from '{url}'. Please provide the "
+            "exact careers/board URL from the company's careers page "
+            "(Greenhouse, Lever, Ashby, Workable, Workday, SmartRecruiters, "
+            "SuccessFactors, Phenom, or Oracle Cloud Recruiting)."
+        )
     slug = company_id or _slugify(name or detected.board_token or url)
     display = name or slug
 
@@ -175,7 +218,25 @@ def add_from_url(
 
     config = _config_from_company(company)
     connector = get_connector(company.ats, http)
-    raw_jobs = connector.fetch(config)
+    try:
+        raw_jobs: list[RawJob] = connector.fetch(config)
+    except Exception as exc:  # noqa: BLE001 - classify, then re-raise if genuine.
+        if not _is_reachability_error(exc):
+            raise
+        # The ATS was positively detected but the board is temporarily
+        # unreachable (403/429/5xx incl. Cloudflare 521, or a transport error).
+        # Add the company anyway with a zero-job baseline so nothing is falsely
+        # marked new; the scheduled poll (and the add-company workflow's
+        # immediate poll) will import the postings later.
+        logger.warning(
+            "Baseline fetch for %s (ats=%s) failed to reach the board (%r); "
+            "adding with a zero-job baseline, the scheduled poll will import "
+            "its jobs later.",
+            slug,
+            company.ats,
+            exc,
+        )
+        raw_jobs = []
 
     canonical_jobs = []
     for raw in raw_jobs:

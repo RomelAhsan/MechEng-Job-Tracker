@@ -127,14 +127,29 @@ def _persist_and_poll(session: Session, http, company_id: str, poll: bool) -> No
     path = append_or_update_yaml(get_settings().companies_file, config)
     typer.echo(f"Persisted {company_id} to {path}.")
     # Machine-readable line so callers (the add-company workflow) can capture
-    # the resolved slug without parsing prose.
+    # the resolved slug without parsing prose. Emitted BEFORE the poll so the
+    # add is never lost if the immediate poll then fails: the workflow commits
+    # config/companies.yaml and runs screen/export off this slug, and the
+    # scheduled poll will import the jobs even when the board is unreachable now.
     typer.echo(f"COMPANY_ID={company_id}")
+    # Persist the YAML now so it survives a poll failure below.
+    session.commit()
     if poll:
-        summary = ingest_service.run(session, http, company_ids=[company_id])
-        typer.echo(
-            f"Polled {company_id}: {summary.total_new} new, "
-            f"{summary.total_changed} changed, {summary.errors} errors."
-        )
+        # ingest_service.run is already fail-soft per company, but guard here so
+        # a hard failure (DB, unexpected error) can never exit non-zero and lose
+        # the add we just persisted and printed.
+        try:
+            summary = ingest_service.run(session, http, company_ids=[company_id])
+            typer.echo(
+                f"Polled {company_id}: {summary.total_new} new, "
+                f"{summary.total_changed} changed, {summary.errors} errors."
+            )
+        except Exception as exc:  # noqa: BLE001 - never lose the persisted add.
+            session.rollback()
+            typer.echo(
+                f"Immediate poll of {company_id} failed ({exc!r}); the company "
+                "was still added and will be polled on the next scheduled run."
+            )
 
 
 @app.command("add-company")

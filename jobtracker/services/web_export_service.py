@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jobtracker.db.models import Company, SourceHealth
+from jobtracker.normalize.posting_date import RELATIVE_LOWER_BOUND_DAYS
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobView
 
@@ -76,6 +77,26 @@ def posted_days_ago(view: JobView, *, now: datetime | None = None) -> int | None
     now = now or datetime.now(UTC)
     days = (now - date).days
     return days if days > 0 else 0
+
+
+def posted_days_ago_is_lower_bound(view: JobView, *, now: datetime | None = None) -> bool:
+    """True when the posting age is only known as a lower bound ("30+ days").
+
+    Workday's "Posted 30+ Days Ago" string resolves to a true posting date of
+    now - :data:`RELATIVE_LOWER_BOUND_DAYS` (so the 14-day freshness cutoff
+    still hides it), but the exact age is unknown. We recognize that case here,
+    from the posting-date-derived day count, so the website can render
+    "Posted 30+ days ago" rather than a precise but wrong "Posted 30 days ago".
+    See :mod:`jobtracker.normalize.posting_date` for why the lower-bound flag
+    is derived at the presentation layer instead of threaded through the DB.
+
+    Only applies when the true posting date drives the count; a job whose age
+    comes from ``first_seen_at`` (no source posting date) is an exact value.
+    """
+    if view.posted_at is None:
+        return False
+    days = posted_days_ago(view, now=now)
+    return days is not None and days >= RELATIVE_LOWER_BOUND_DAYS
 
 
 def is_fresh(view: JobView, *, now: datetime | None = None) -> bool:
@@ -146,6 +167,7 @@ def _job_to_dict(view: JobView, ai_result: dict | None) -> dict[str, object]:
         "source_url": view.source_url,
         "posted_at": _iso(view.posted_at),
         "posted_days_ago": posted_days_ago(view),
+        "posted_days_ago_is_lower_bound": posted_days_ago_is_lower_bound(view),
         "first_seen_at": _iso(view.first_seen_at),
         "first_seen_ago": view.first_seen_ago,
         "source_last_checked_at": _iso(view.source_last_checked_at),
