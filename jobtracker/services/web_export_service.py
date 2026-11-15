@@ -22,10 +22,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from jobtracker.db.models import Company, SourceHealth
+from jobtracker.db.models import Company, Job, SourceHealth
 from jobtracker.normalize.posting_date import RELATIVE_LOWER_BOUND_DAYS
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobView
@@ -202,6 +202,38 @@ class WebFeed:
 _STUB_ATS = {"html"}
 
 
+def _tracked_companies(session: Session) -> list[dict[str, object]]:
+    """The actively-tracked employers we actually pull jobs from.
+
+    Uses the EXACT same predicate as the ``tracked_company_count`` summary
+    (active + enabled + a real connector, i.e. not an ``html`` stub) so the
+    list and the count never disagree. Each item carries the company name, its
+    ATS, and the number of ACTIVE jobs currently held for that company. Sorted
+    by name (case-insensitive) for stable, human-friendly output.
+    """
+    rows = session.execute(
+        select(Company.id, Company.name, Company.ats).where(
+            Company.active.is_(True),
+            Company.enabled.is_(True),
+            Company.ats.not_in(_STUB_ATS),
+        )
+    ).all()
+
+    companies: list[dict[str, object]] = []
+    for company_id, name, ats in rows:
+        job_count = session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(Job.company_id == company_id, Job.status == "active")
+        )
+        companies.append(
+            {"name": name, "ats": ats, "job_count": int(job_count or 0)}
+        )
+
+    companies.sort(key=lambda c: str(c["name"]).casefold())
+    return companies
+
+
 def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
     """Build the static feed payload from the eligible "Relevant For Me" set."""
     from jobtracker.services import ai_service
@@ -218,26 +250,19 @@ def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
         cached = ai_service.get_cached(session, v.job_id, user_id=user_id)
         jobs.append(_job_to_dict(v, cached.result if cached else None))
 
-    # Count only companies we ACTUALLY pull jobs from: active, enabled, and
+    # List only companies we ACTUALLY pull jobs from: active, enabled, and
     # backed by a real connector (not an `html` stub). The old count included
     # all 153 rows, which misleadingly advertised employers we cannot fetch.
-    tracked = len(
-        list(
-            session.scalars(
-                select(Company.id).where(
-                    Company.active.is_(True),
-                    Company.enabled.is_(True),
-                    Company.ats.not_in(_STUB_ATS),
-                )
-            )
-        )
-    )
+    # The LIST and the count share the exact same predicate so they can never
+    # disagree (tracked_company_count == len(tracked_companies)).
+    tracked_companies = _tracked_companies(session)
 
     payload: dict[str, object] = {
         "version": FEED_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "source_last_checked_at": _iso(_latest_source_check(session)),
-        "tracked_company_count": tracked,
+        "tracked_company_count": len(tracked_companies),
+        "tracked_companies": tracked_companies,
         "job_count": len(jobs),
         # Ambiguous jobs held back until the AI confirms them (never shown
         # unconfirmed when an AI key is configured).

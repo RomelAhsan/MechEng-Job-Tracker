@@ -169,6 +169,57 @@ def test_tracked_count_excludes_stub_companies(session: Session) -> None:
     assert feed.payload["tracked_company_count"] == 1
 
 
+def _active_job(session: Session, job_id: str, company_id: str) -> None:
+    session.add(
+        Job(
+            job_id=job_id,
+            company_id=company_id,
+            source_job_id=job_id,
+            title="Mechanical Engineering Intern",
+            status="active",
+        )
+    )
+
+
+def test_tracked_companies_list_matches_count_and_shape(session: Session) -> None:
+    # Same predicate as the count: active + enabled + non-stub ATS. Two eligible
+    # companies (added out of alphabetical order), plus a html stub and a
+    # disabled company that must both be excluded.
+    session.add(Company(id="zeta", name="Zeta Dynamics", ats="lever", active=True, enabled=True))
+    session.add(
+        Company(id="acme", name="Acme Robotics", ats="greenhouse", active=True, enabled=True)
+    )
+    session.add(Company(id="stub", name="Stub Co", ats="html", active=True, enabled=True))
+    session.add(Company(id="off", name="Off Co", ats="lever", active=True, enabled=False))
+    # Two active jobs for Acme, one for Zeta; a non-active job must not count.
+    _active_job(session, "acme-1", "acme")
+    _active_job(session, "acme-2", "acme")
+    _active_job(session, "zeta-1", "zeta")
+    session.add(
+        Job(job_id="acme-old", company_id="acme", source_job_id="acme-old", status="removed")
+    )
+    session.flush()
+
+    payload = web_export_service.build_feed(session).payload
+    tracked = payload["tracked_companies"]
+
+    # The html stub and the disabled company are excluded.
+    names = [c["name"] for c in tracked]
+    assert names == ["Acme Robotics", "Zeta Dynamics"]  # sorted by name
+    assert "Stub Co" not in names
+    assert "Off Co" not in names
+
+    # Each item carries name/ats/job_count.
+    by_name = {c["name"]: c for c in tracked}
+    assert by_name["Acme Robotics"]["ats"] == "greenhouse"
+    assert by_name["Acme Robotics"]["job_count"] == 2  # only active jobs
+    assert by_name["Zeta Dynamics"]["ats"] == "lever"
+    assert by_name["Zeta Dynamics"]["job_count"] == 1
+
+    # The list and the count never disagree.
+    assert len(tracked) == payload["tracked_company_count"] == 2
+
+
 def test_job_without_ai_analysis_has_null_reasoning(session: Session) -> None:
     _company(session)
     _job(session, "keep-1", "Mechanical Engineering Intern", eligible=True)

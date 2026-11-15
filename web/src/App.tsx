@@ -9,6 +9,7 @@ import {
   remoteOptions,
 } from "./filtering";
 import { JobCard } from "./JobCard";
+import { TrackedCompanies } from "./TrackedCompanies";
 import {
   DEFAULT_FILTERS,
   FRESHNESS_OPTIONS,
@@ -104,7 +105,9 @@ export function App() {
         </nav>
       </header>
 
-      {view === "add" && <AddCompany />}
+      {view === "add" && (
+        <AddCompany trackedCompanies={feed?.tracked_companies ?? []} />
+      )}
 
       {view === "jobs" && error && (
         <div className="state state-error" role="alert">
@@ -216,6 +219,8 @@ export function App() {
               ))}
             </section>
           )}
+
+          <TrackedCompanies companies={feed.tracked_companies ?? []} />
         </>
       )}
 

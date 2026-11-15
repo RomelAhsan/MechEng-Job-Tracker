@@ -100,6 +100,48 @@ describe("AddCompany", () => {
     );
   });
 
+  it("blocks adding a company already in the tracked list (no dispatch)", async () => {
+    const fetchFn = mockFetch(204);
+    render(
+      <AddCompany
+        trackedCompanies={[{ name: "RTX", ats: "phenom", job_count: 3 }]}
+      />,
+    );
+    saveTokenViaUi();
+    // Case-insensitive name match against the tracked list.
+    fireEvent.change(screen.getByLabelText(/company name or careers url/i), {
+      target: { value: "rtx" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /already being tracked/i,
+    );
+    // The workflow is NOT dispatched.
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("blocks adding a careers URL whose host matches a tracked company", async () => {
+    const fetchFn = mockFetch(204);
+    render(
+      <AddCompany
+        trackedCompanies={[
+          { name: "https://careers.rtx.com", ats: "phenom", job_count: 1 },
+        ]}
+      />,
+    );
+    saveTokenViaUi();
+    fireEvent.change(screen.getByLabelText(/company name or careers url/i), {
+      target: { value: "https://www.careers.rtx.com/search" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /already being tracked/i,
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it("restores a saved token from localStorage on mount", async () => {
     localStorage.setItem(TOKEN_KEY, "github_pat_saved");
     render(<AddCompany />);

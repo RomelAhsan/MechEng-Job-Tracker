@@ -52,11 +52,21 @@ export interface AiReasoning {
   concerns?: string[];
 }
 
+// One actively-tracked employer we really pull jobs from (connector-backed,
+// active, enabled). Mirrors web_export_service._tracked_companies.
+export interface TrackedCompany {
+  name: string;
+  ats: string;
+  job_count: number;
+}
+
 export interface Feed {
   version: number;
   generated_at: string;
   source_last_checked_at: string | null;
   tracked_company_count: number;
+  // Older feeds may omit this; code treats a missing value as [].
+  tracked_companies?: TrackedCompany[];
   job_count: number;
   pending_ai_count?: number;
   jobs: Job[];
