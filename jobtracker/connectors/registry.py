@@ -16,6 +16,7 @@ from jobtracker.connectors.http import HttpClient
 from jobtracker.connectors.lever import LeverConnector
 from jobtracker.connectors.oracle import OracleConnector, parse_oracle_url
 from jobtracker.connectors.phenom import PhenomConnector, parse_phenom_host
+from jobtracker.connectors.radancy import RadancyConnector, parse_radancy_host
 from jobtracker.connectors.smartrecruiters import SmartRecruitersConnector
 from jobtracker.connectors.successfactors import SuccessFactorsConnector
 from jobtracker.connectors.workable import WorkableConnector, parse_workable_account
@@ -33,6 +34,7 @@ _SUPPORTED: dict[str, type[Connector]] = {
     ATSType.SUCCESSFACTORS.value: SuccessFactorsConnector,
     ATSType.PHENOM.value: PhenomConnector,
     ATSType.ORACLE.value: OracleConnector,
+    ATSType.RADANCY.value: RadancyConnector,
     ATSType.RSS.value: RssConnector,
     ATSType.SITEMAP.value: SitemapConnector,
     ATSType.JSON_LD.value: JsonLdConnector,
@@ -74,6 +76,10 @@ _ORACLE_HOSTS = ("oraclecloud.com",)
 #: ``/widgets`` search; everything else falls through to the html fallback so
 #: an arbitrary domain is never misclassified as Phenom.
 _PHENOM_HOSTS = ("careers.rtx.com",)
+#: Radancy / TalentBrew careers hosts are custom vanity domains with no shared
+#: fingerprint, so (like Phenom) detect only hosts VERIFIED to serve the public
+#: ``/en/search-jobs/results`` endpoint; everything else falls through to html.
+_RADANCY_HOSTS = ("careers.l3harris.com",)
 
 
 def _first_path_segment(path: str) -> str | None:
@@ -135,6 +141,8 @@ def detect_ats(url: str) -> DetectedATS:
         return DetectedATS(ATSType.ORACLE.value, token)
     if any(host == h or host.endswith(f".{h}") for h in _PHENOM_HOSTS):
         return DetectedATS(ATSType.PHENOM.value, parse_phenom_host(host))
+    if any(host == h or host.endswith(f".{h}") for h in _RADANCY_HOSTS):
+        return DetectedATS(ATSType.RADANCY.value, parse_radancy_host(host))
     if host.endswith(".rss") or path.endswith(".rss") or "/rss" in path or "/feed" in path:
         return DetectedATS(ATSType.RSS.value, url)
     if "sitemap" in path and path.endswith(".xml"):

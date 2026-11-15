@@ -74,6 +74,102 @@ def _mock_phenom() -> None:
     ]
 
 
+def _huge_phenom(total: int) -> None:
+    """Mock a big Phenom board: one search page of ``total`` jobs + details.
+
+    The search list is a single ``refineSearch`` page; every per-posting
+    ``jobDetail`` POST returns a full description. A count cap must stop issuing
+    those detail calls once the cap is reached, so this proves the add-time poll
+    is bounded instead of fetching all ``total`` postings.
+    """
+    list_jobs = [
+        {
+            "jobId": f"BIG{i}",
+            "title": f"Engineer {i}",
+            "location": "Tucson, Arizona, United States",
+            "dateCreated": 1767974400000,
+            "descriptionTeaser": "teaser",
+        }
+        for i in range(total)
+    ]
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content.decode() or "{}")
+        if body.get("ddoKey") == "refineSearch":
+            return httpx.Response(
+                200,
+                json={
+                    "refineSearch": {
+                        "totalHits": total,
+                        "data": {"jobs": list_jobs},
+                    }
+                },
+            )
+        job_id = body.get("jobId")
+        return httpx.Response(
+            200,
+            json={
+                "jobDetail": {
+                    "data": {"job": {"jobId": job_id, "description": "<p>Full.</p>"}}
+                }
+            },
+        )
+
+    respx.post(WIDGETS).mock(side_effect=_handler)
+
+
+@respx.mock
+def test_add_company_poll_is_bounded_by_cap(
+    engine: Engine, factory: sessionmaker, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The add-time poll fetches at most ADD_POLL_MAX_POSTINGS, still persists
+    the YAML, and exits 0 even though the board advertises many more jobs."""
+    from jobtracker.db.models import Job
+
+    path = tmp_path / "companies.yaml"
+    path.write_text("companies: []\n", encoding="utf-8")
+    cap = 5
+    settings = Settings(
+        companies_file=str(path),
+        rate_limit_per_host=0.0,
+        add_poll_max_postings=cap,
+    )
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr("jobtracker.settings.get_settings", lambda: settings)
+    # company_service and ingest_service bound ``get_settings`` at import; patch
+    # their module-local names so the cap applies to the baseline fetch too.
+    monkeypatch.setattr(
+        "jobtracker.services.company_service.get_settings", lambda: settings
+    )
+    monkeypatch.setattr(
+        "jobtracker.services.ingest_service.get_settings", lambda: settings
+    )
+
+    _huge_phenom(total=50)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["add-company", "https://careers.rtx.com/global/en", "--name", "RTX",
+         "--poll"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "bounded to at most 5" in result.output
+
+    # The company (companies.yaml) is persisted regardless of the bound.
+    companies = load_companies(str(path))
+    assert [c.id for c in companies] == ["rtx"]
+
+    # Only up to the cap were ingested, not all 50 advertised postings.
+    session = factory()
+    try:
+        stored = session.query(Job).filter(Job.company_id == "rtx").count()
+    finally:
+        session.close()
+    assert stored == cap
+
+
 @respx.mock
 def test_add_company_persists_yaml_idempotently(
     factory: sessionmaker, companies_file: str

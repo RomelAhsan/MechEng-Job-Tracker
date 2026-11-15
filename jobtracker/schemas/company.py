@@ -11,8 +11,9 @@ class ATSType(StrEnum):
     """Supported and fallback applicant-tracking-system types.
 
     ``greenhouse``/``lever``/``ashby``/``smartrecruiters``/``workday``/
-    ``workable``/``rss``/``sitemap``/``json_ld`` have real connectors. ``html``
-    routes to the fail-soft fallback stub.
+    ``workable``/``successfactors``/``phenom``/``oracle``/``radancy``/``rss``/
+    ``sitemap``/``json_ld`` have real connectors. ``html`` routes to the
+    fail-soft fallback stub.
     """
 
     GREENHOUSE = "greenhouse"
@@ -29,6 +30,10 @@ class ATSType(StrEnum):
     #: Oracle Cloud Recruiting (ORC); board_token = ``{origin}|{siteNumber}``.
     #: Fetched via the recruitingCEJobRequisitions REST API.
     ORACLE = "oracle"
+    #: Radancy / TalentBrew (e.g. L3Harris); board_token = the careers host
+    #: (e.g. ``careers.l3harris.com``). Fetched via the public
+    #: ``/en/search-jobs/results`` endpoint + per-job JobPosting JSON-LD.
+    RADANCY = "radancy"
     RSS = "rss"
     SITEMAP = "sitemap"
     JSON_LD = "json_ld"

@@ -21,11 +21,12 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from jobtracker.db.models import Company, SourceHealth
+from jobtracker.db.models import Company, Job, SourceHealth
 from jobtracker.normalize.posting_date import RELATIVE_LOWER_BOUND_DAYS
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobView
@@ -202,6 +203,63 @@ class WebFeed:
 _STUB_ATS = {"html"}
 
 
+def _careers_host(careers_url: str | None) -> str | None:
+    """Registrable careers host for a company (``www.`` stripped), or ``None``.
+
+    Used by the front-end's Add-tab duplicate guard so pasting a careers URL
+    for an already-tracked company is matched by HOST, not just by display
+    name (a display name like "L3Harris Technologies" never parses to a host).
+    """
+    if not careers_url:
+        return None
+    raw = careers_url.strip()
+    if not raw:
+        return None
+    split = urlsplit(raw if "//" in raw else f"https://{raw}")
+    host = (split.netloc or split.path).split("/", 1)[0].lower()
+    host = host.split(":", 1)[0].removeprefix("www.")
+    return host or None
+
+
+def _tracked_companies(session: Session) -> list[dict[str, object]]:
+    """The actively-tracked employers we actually pull jobs from.
+
+    Uses the EXACT same predicate as the ``tracked_company_count`` summary
+    (active + enabled + a real connector, i.e. not an ``html`` stub) so the
+    list and the count never disagree. Each item carries the company name, its
+    ATS, a careers ``host`` (derived from ``careers_url`` so the Add tab can
+    block a pasted careers URL for an already-tracked company), and the number
+    of ACTIVE jobs currently held. Sorted by name (case-insensitive) for
+    stable, human-friendly output.
+    """
+    rows = session.execute(
+        select(Company.id, Company.name, Company.ats, Company.careers_url).where(
+            Company.active.is_(True),
+            Company.enabled.is_(True),
+            Company.ats.not_in(_STUB_ATS),
+        )
+    ).all()
+
+    companies: list[dict[str, object]] = []
+    for company_id, name, ats, careers_url in rows:
+        job_count = session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(Job.company_id == company_id, Job.status == "active")
+        )
+        companies.append(
+            {
+                "name": name,
+                "ats": ats,
+                "host": _careers_host(careers_url),
+                "job_count": int(job_count or 0),
+            }
+        )
+
+    companies.sort(key=lambda c: str(c["name"]).casefold())
+    return companies
+
+
 def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
     """Build the static feed payload from the eligible "Relevant For Me" set."""
     from jobtracker.services import ai_service
@@ -218,26 +276,19 @@ def build_feed(session: Session, *, user_id: int | None = None) -> WebFeed:
         cached = ai_service.get_cached(session, v.job_id, user_id=user_id)
         jobs.append(_job_to_dict(v, cached.result if cached else None))
 
-    # Count only companies we ACTUALLY pull jobs from: active, enabled, and
+    # List only companies we ACTUALLY pull jobs from: active, enabled, and
     # backed by a real connector (not an `html` stub). The old count included
     # all 153 rows, which misleadingly advertised employers we cannot fetch.
-    tracked = len(
-        list(
-            session.scalars(
-                select(Company.id).where(
-                    Company.active.is_(True),
-                    Company.enabled.is_(True),
-                    Company.ats.not_in(_STUB_ATS),
-                )
-            )
-        )
-    )
+    # The LIST and the count share the exact same predicate so they can never
+    # disagree (tracked_company_count == len(tracked_companies)).
+    tracked_companies = _tracked_companies(session)
 
     payload: dict[str, object] = {
         "version": FEED_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "source_last_checked_at": _iso(_latest_source_check(session)),
-        "tracked_company_count": tracked,
+        "tracked_company_count": len(tracked_companies),
+        "tracked_companies": tracked_companies,
         "job_count": len(jobs),
         # Ambiguous jobs held back until the AI confirms them (never shown
         # unconfirmed when an AI key is configured).

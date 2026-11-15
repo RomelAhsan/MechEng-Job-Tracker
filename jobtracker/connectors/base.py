@@ -57,6 +57,12 @@ class Connector(ABC):
     #: Stored postings keyed by the "/job/..." path of their apply link. Set by
     #: the ingest service before ``fetch``; connectors may ignore it.
     known_jobs: dict[str, KnownJob] = {}
+    #: Optional cap on how many postings ``fetch`` should return for a single
+    #: call (``None`` = unbounded). Set by the ingest service only for the
+    #: one-time add-time poll so a huge board cannot hold the add; connectors
+    #: that paginate or issue a per-posting detail request should stop once this
+    #: many postings have been collected. The scheduled poll leaves it ``None``.
+    max_postings: int | None = None
 
     @abstractmethod
     def fetch(self, company: CompanyConfig) -> list[RawJob]:

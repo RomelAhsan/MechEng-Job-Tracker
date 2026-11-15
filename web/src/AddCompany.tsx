@@ -7,6 +7,67 @@ import {
   getToken,
   setToken,
 } from "./apiGithub";
+import type { TrackedCompany } from "./types";
+
+const ALREADY_TRACKED_MESSAGE =
+  "This company is already being tracked — no need to add it again.";
+
+/** Normalize a free-text value for case-insensitive comparison. */
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Extract a comparable host from a careers URL (host without a leading "www.").
+ * Returns "" when the input is not a URL we can parse.
+ */
+function hostOf(value: string): string {
+  const raw = value.trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    return url.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * True when `input` (a company name OR a careers URL) already appears in the
+ * tracked list or the just-added list. Matches by case-insensitive name, and
+ * for a URL also by host against each known company's name/host tokens.
+ */
+export function isAlreadyTracked(
+  input: string,
+  tracked: TrackedCompany[],
+  added: string[],
+): boolean {
+  const value = normalize(input);
+  if (!value) return false;
+
+  const names = new Set<string>([
+    ...tracked.map((c) => normalize(c.name)),
+    ...added.map((a) => normalize(a)),
+  ]);
+  if (names.has(value)) return true;
+
+  // URL input: compare the typed host against each tracked company's careers
+  // host (emitted by the backend as `host`) and against any added entry that
+  // is itself a URL. The display name never parses to a host, so the tracked
+  // `host` field is what actually closes the URL-duplicate loop.
+  const inputHost = hostOf(input);
+  if (inputHost) {
+    for (const c of tracked) {
+      const candidateHost = normalize(c.host ?? "");
+      if (candidateHost && candidateHost === inputHost) return true;
+    }
+    for (const candidate of added) {
+      const candidateHost = hostOf(candidate);
+      if (candidateHost && candidateHost === inputHost) return true;
+    }
+  }
+  return false;
+}
 
 type Status =
   | { kind: "idle" }
@@ -17,7 +78,11 @@ type Status =
 const SUCCESS_MESSAGE =
   "Add requested — new jobs appear within a minute or two after the run.";
 
-export function AddCompany() {
+export function AddCompany({
+  trackedCompanies = [],
+}: {
+  trackedCompanies?: TrackedCompany[];
+}) {
   const [company, setCompany] = useState("");
   const [token, setTokenState] = useState(() => getToken());
   const [tokenInput, setTokenInput] = useState("");
@@ -48,6 +113,12 @@ export function AddCompany() {
     e.preventDefault();
     const name = company.trim();
     if (!name || !hasToken) return;
+    // Block an already-tracked company before dispatching the workflow, so we
+    // never kick off a run for something we are already pulling jobs from.
+    if (isAlreadyTracked(name, trackedCompanies, added)) {
+      setStatus({ kind: "error", message: ALREADY_TRACKED_MESSAGE });
+      return;
+    }
     setStatus({ kind: "sending" });
     try {
       await dispatchAddCompany(name, token);

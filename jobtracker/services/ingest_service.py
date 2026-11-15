@@ -182,11 +182,19 @@ def _record_fallback(session: Session, company_id: str) -> None:
 
 
 def _ingest_company(
-    session: Session, company: Company, http: HttpClient
+    session: Session,
+    company: Company,
+    http: HttpClient,
+    *,
+    max_postings: int | None = None,
 ) -> CompanyRunResult:
     config = _config_from_company(company)
     connector = get_connector(company.ats, http)
     connector.known_jobs = _known_jobs(session, company.id)
+    # Only the one-time add-time poll passes a cap; the scheduled poll leaves it
+    # None so the connector fetches the full board.
+    if max_postings is not None:
+        connector.max_postings = max_postings
     raw_jobs = connector.fetch(config)
 
     # Unsupported ATS: the fallback stub returns [] and flags requires_fallback.
@@ -288,12 +296,18 @@ def run(
     http: HttpClient,
     *,
     company_ids: list[str] | None = None,
+    max_postings_per_company: int | None = None,
 ) -> RunSummary:
     """Run a fail-soft ingestion pass over enabled + active companies.
 
     When ``company_ids`` is given the run is limited to those ids (still
     requiring enabled + active). One company failing is isolated: the error is
     recorded to ``source_health`` and the run continues.
+
+    ``max_postings_per_company`` bounds how many postings each connector fetches
+    in this run (``None`` = unbounded). It is set ONLY for the one-time add-time
+    poll fired right after ``add-company --poll`` so a huge board cannot hold the
+    add; the scheduled poller leaves it ``None`` and fetches the full board.
     """
     repo = CompanyRepository(session)
     companies = repo.list(enabled_only=True, active_only=True)
@@ -314,7 +328,9 @@ def run(
     fallback = _WorkdayFallback()
     for company in companies:
         try:
-            result = _ingest_company(session, company, http)
+            result = _ingest_company(
+                session, company, http, max_postings=max_postings_per_company
+            )
             session.commit()
         except Exception as exc:  # noqa: BLE001 - fail-soft: isolate per company.
             session.rollback()

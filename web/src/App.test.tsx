@@ -8,7 +8,11 @@ function feed(overrides: Partial<Feed> = {}): Feed {
     version: 1,
     generated_at: "2026-01-01T12:00:00+00:00",
     source_last_checked_at: "2026-01-01T11:50:00+00:00",
-    tracked_company_count: 35,
+    tracked_company_count: 2,
+    tracked_companies: [
+      { name: "Acme Robotics", ats: "greenhouse", job_count: 2 },
+      { name: "Figure", ats: "lever", job_count: 1 },
+    ],
     job_count: 1,
     jobs: [
       {
@@ -85,6 +89,17 @@ describe("App", () => {
     expect(
       screen.getByText(/Strong mechanical co-op fit for a first-year/i),
     ).toBeInTheDocument();
+  });
+
+  it("lists the actively-tracked companies from the feed", async () => {
+    mockFetch(feed());
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: /Companies we're tracking/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Acme Robotics")).toBeInTheDocument();
+    expect(screen.getByText("greenhouse")).toBeInTheDocument();
+    expect(screen.getByText("2 jobs")).toBeInTheDocument();
   });
 
   it("shows an empty-state when there are no eligible jobs", async () => {

@@ -135,11 +135,26 @@ def _persist_and_poll(session: Session, http, company_id: str, poll: bool) -> No
     # Persist the YAML now so it survives a poll failure below.
     session.commit()
     if poll:
+        # The immediate poll is a one-time convenience; the scheduled poll does
+        # the full fetch. Bound it so a huge board (e.g. RTX Phenom ~4600
+        # postings) cannot hold the add. The add (companies.yaml) is already
+        # committed above, so it survives regardless of the poll outcome.
+        cap = get_settings().add_poll_max_postings
+        if cap is not None:
+            typer.echo(
+                f"Immediate poll of {company_id} is bounded to at most {cap} "
+                "postings; the scheduled poll will fetch the rest."
+            )
         # ingest_service.run is already fail-soft per company, but guard here so
         # a hard failure (DB, unexpected error) can never exit non-zero and lose
         # the add we just persisted and printed.
         try:
-            summary = ingest_service.run(session, http, company_ids=[company_id])
+            summary = ingest_service.run(
+                session,
+                http,
+                company_ids=[company_id],
+                max_postings_per_company=cap,
+            )
             typer.echo(
                 f"Polled {company_id}: {summary.total_new} new, "
                 f"{summary.total_changed} changed, {summary.errors} errors."
@@ -172,6 +187,16 @@ def add_company(
         result = company_service.add_from_url(
             session, url, http, company_id=company_id, name=name, priority=priority
         )
+        if result.already_tracked:
+            # Already tracked: no duplicate created. Emit the existing id and
+            # exit 0 so the add-company workflow no-ops gracefully (commits
+            # nothing new) rather than erroring.
+            typer.echo(
+                f"{result.company_id} is already tracked (ats={result.ats}, "
+                f"token={result.board_token}); no duplicate added."
+            )
+            typer.echo(f"COMPANY_ID={result.company_id}")
+            return
         typer.echo(
             f"Added {result.company_id} (ats={result.ats}, "
             f"token={result.board_token}); "
@@ -218,7 +243,14 @@ def add_company_by_name(
             typer.echo("Re-run with --confirm to import this board.")
         if not result.resolved:
             raise typer.Exit(code=1)
-        _persist_and_poll(session, http, result.add_result.company_id, poll)
+        add_result = result.add_result
+        if add_result is not None and add_result.already_tracked:
+            typer.echo(
+                f"{add_result.company_id} is already tracked; no duplicate added."
+            )
+            typer.echo(f"COMPANY_ID={add_result.company_id}")
+            return
+        _persist_and_poll(session, http, add_result.company_id, poll)
 
 
 def _sync_seed(session: Session) -> None:
