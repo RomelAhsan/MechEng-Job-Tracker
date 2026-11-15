@@ -121,18 +121,26 @@ describe("AddCompany", () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  it("blocks adding a careers URL whose host matches a tracked company", async () => {
+  it("blocks adding a careers URL whose host matches a tracked company's host", async () => {
     const fetchFn = mockFetch(204);
+    // The backend emits a display `name` plus a careers `host` (never a URL as
+    // the name). The URL duplicate guard must match the typed URL's host
+    // against that `host` field, not against the display name.
     render(
       <AddCompany
         trackedCompanies={[
-          { name: "https://careers.rtx.com", ats: "phenom", job_count: 1 },
+          {
+            name: "L3Harris Technologies",
+            ats: "radancy",
+            host: "careers.l3harris.com",
+            job_count: 1,
+          },
         ]}
       />,
     );
     saveTokenViaUi();
     fireEvent.change(screen.getByLabelText(/company name or careers url/i), {
-      target: { value: "https://www.careers.rtx.com/search" },
+      target: { value: "https://www.careers.l3harris.com/en/search-jobs" },
     });
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 

@@ -260,8 +260,7 @@ def _find_existing(
 
     1. the resolved clean ``slug`` (same derived id);
     2. the same ``board_token`` (regardless of id);
-    3. the same ``ats`` + ``board_token`` pair;
-    4. the same humanized display name on a stub for the same company (so an
+    3. the same humanized display name on a stub for the same company (so an
        html stub like ``honeywell-aerospace`` is recognized as Honeywell and
        superseded, not duplicated).
 
@@ -275,8 +274,6 @@ def _find_existing(
     name_norm = display_name.strip().lower()
     for company in repo.list():
         if token and company.board_token == token:
-            return company
-        if token and company.ats == detected.ats and company.board_token == token:
             return company
         if name_norm and (company.name or "").strip().lower() == name_norm:
             return company
@@ -334,7 +331,24 @@ def add_from_url(
     # also match the humanized name/host so an html stub (e.g.
     # 'honeywell-aerospace') for the same company is treated as the same entry.
     existing = _find_existing(repo, slug, detected, display)
-    if existing is not None and existing.active and existing.enabled:
+
+    # Special case: the matched row is an html STUB (no working connector) but
+    # the new detection IS a real connector. The stub was never fetched, so
+    # rather than reporting "already tracked" and leaving it an unfetched html
+    # row, upgrade it in place to the detected connector (preserving its id,
+    # history, and itar flag) and fall through to the normal baseline import.
+    stub_to_upgrade = (
+        existing is not None
+        and existing.ats in _UNDETECTED_ATS
+        and detected.ats not in _UNDETECTED_ATS
+    )
+
+    if (
+        existing is not None
+        and existing.active
+        and existing.enabled
+        and not stub_to_upgrade
+    ):
         logger.info(
             "Company %s already tracked (matched existing id=%s); no duplicate "
             "created.",
@@ -352,8 +366,16 @@ def add_from_url(
 
     now = _now()
     if existing is not None:
-        # Same company but disabled/inactive: re-enable the existing row in
-        # place (keep its id/history) rather than creating a parallel entry.
+        # Same company but either disabled/inactive, or an html stub being
+        # upgraded to a real connector: reuse the existing row in place (keep
+        # its id/history/itar flag) rather than creating a parallel entry.
+        if stub_to_upgrade:
+            logger.info(
+                "Upgrading html stub %s to detected connector ats=%s; keeping "
+                "its id and history.",
+                existing.id,
+                detected.ats,
+            )
         company = existing
         slug = existing.id
     else:

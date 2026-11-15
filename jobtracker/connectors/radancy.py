@@ -199,6 +199,13 @@ class RadancyConnector(Connector):
                 raw.location = location
             return raw
         # No JSON-LD: still surface the listing so the board is not empty.
+        # ``posted_at`` is left ``None`` here because the only date source on a
+        # Radancy board is the JobPosting ``datePosted`` in the page's JSON-LD;
+        # the results fragment job cards carry only title/location/job-id (no
+        # date attribute) and a no-JSON-LD page exposes no posting date to
+        # parse. An undated job is KEPT by the freshness cutoff rather than
+        # dropped, so this edge case (every live L3Harris page has JSON-LD)
+        # loses only the precise age label, not the posting itself.
         return RawJob(
             source_job_id=url,
             title=title,

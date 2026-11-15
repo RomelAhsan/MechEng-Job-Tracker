@@ -317,13 +317,21 @@ def test_add_from_url_reenables_disabled_company(
 def test_add_from_url_supersedes_matching_html_stub(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Adding Honeywell via Oracle when a same-name html stub exists merges them."""
+    """Adding Honeywell via Oracle when a same-name html stub exists upgrades it.
+
+    The matched stub was never fetched (ats='html'); detecting a real Oracle
+    connector must rewrite the stub's ats/board_token/careers_url in place
+    (keeping its id, history, and itar flag) rather than returning
+    already_tracked and leaving an unfetched html row, and must not create a
+    second parallel entry.
+    """
     stub = Company(
         id="honeywell-aerospace",
         name="Honeywell",
         ats="html",
         active=True,
         enabled=True,
+        itar_restricted=True,
     )
     session.add(stub)
     session.flush()
@@ -337,17 +345,22 @@ def test_add_from_url_supersedes_matching_html_stub(
         ),
     )
 
-    result = company_service.add_from_url(
-        session,
-        "https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell",
-        http=object(),
-    )
+    url = "https://ibqbjb.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Honeywell"
+    result = company_service.add_from_url(session, url, http=object())
     session.flush()
 
     # Matched the existing stub by humanized name; no parallel entry created.
-    assert result.already_tracked is True
     assert result.company_id == "honeywell-aerospace"
     assert session.query(Company).count() == 1
+
+    # The stub is upgraded to the detected connector, not left html.
+    assert result.already_tracked is False
+    upgraded = session.get(Company, "honeywell-aerospace")
+    assert upgraded.ats == "oracle"
+    assert upgraded.board_token == "https://ibqbjb.fa.ocs.oraclecloud.com|Honeywell"
+    assert upgraded.careers_url == url
+    # The ITAR flag is preserved across the upgrade.
+    assert upgraded.itar_restricted is True
 
 
 def test_remove_keeps_history(session: Session) -> None:

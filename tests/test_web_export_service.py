@@ -185,9 +185,25 @@ def test_tracked_companies_list_matches_count_and_shape(session: Session) -> Non
     # Same predicate as the count: active + enabled + non-stub ATS. Two eligible
     # companies (added out of alphabetical order), plus a html stub and a
     # disabled company that must both be excluded.
-    session.add(Company(id="zeta", name="Zeta Dynamics", ats="lever", active=True, enabled=True))
     session.add(
-        Company(id="acme", name="Acme Robotics", ats="greenhouse", active=True, enabled=True)
+        Company(
+            id="zeta",
+            name="Zeta Dynamics",
+            ats="lever",
+            active=True,
+            enabled=True,
+            careers_url="https://jobs.lever.co/zeta",
+        )
+    )
+    session.add(
+        Company(
+            id="acme",
+            name="Acme Robotics",
+            ats="greenhouse",
+            active=True,
+            enabled=True,
+            careers_url="https://www.careers.acme.com/jobs",
+        )
     )
     session.add(Company(id="stub", name="Stub Co", ats="html", active=True, enabled=True))
     session.add(Company(id="off", name="Off Co", ats="lever", active=True, enabled=False))
@@ -213,8 +229,12 @@ def test_tracked_companies_list_matches_count_and_shape(session: Session) -> Non
     by_name = {c["name"]: c for c in tracked}
     assert by_name["Acme Robotics"]["ats"] == "greenhouse"
     assert by_name["Acme Robotics"]["job_count"] == 2  # only active jobs
+    # The careers host is derived from careers_url (leading "www." stripped) so
+    # the Add tab can block a pasted careers URL for an already-tracked company.
+    assert by_name["Acme Robotics"]["host"] == "careers.acme.com"
     assert by_name["Zeta Dynamics"]["ats"] == "lever"
     assert by_name["Zeta Dynamics"]["job_count"] == 1
+    assert by_name["Zeta Dynamics"]["host"] == "jobs.lever.co"
 
     # The list and the count never disagree.
     assert len(tracked) == payload["tracked_company_count"] == 2

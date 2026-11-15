@@ -51,10 +51,17 @@ export function isAlreadyTracked(
   ]);
   if (names.has(value)) return true;
 
-  // URL input: compare the typed host against each known name/URL's host.
+  // URL input: compare the typed host against each tracked company's careers
+  // host (emitted by the backend as `host`) and against any added entry that
+  // is itself a URL. The display name never parses to a host, so the tracked
+  // `host` field is what actually closes the URL-duplicate loop.
   const inputHost = hostOf(input);
   if (inputHost) {
-    for (const candidate of [...tracked.map((c) => c.name), ...added]) {
+    for (const c of tracked) {
+      const candidateHost = normalize(c.host ?? "");
+      if (candidateHost && candidateHost === inputHost) return true;
+    }
+    for (const candidate of added) {
       const candidateHost = hostOf(candidate);
       if (candidateHost && candidateHost === inputHost) return true;
     }

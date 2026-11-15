@@ -57,6 +57,10 @@ export interface AiReasoning {
 export interface TrackedCompany {
   name: string;
   ats: string;
+  // Careers host (e.g. "careers.l3harris.com"), derived from the company's
+  // careers_url, so the Add tab can block a pasted careers URL for an
+  // already-tracked company. null when no careers_url is known.
+  host?: string | null;
   job_count: number;
 }
 

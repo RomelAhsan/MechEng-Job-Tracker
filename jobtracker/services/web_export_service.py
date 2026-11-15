@@ -21,6 +21,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -202,17 +203,37 @@ class WebFeed:
 _STUB_ATS = {"html"}
 
 
+def _careers_host(careers_url: str | None) -> str | None:
+    """Registrable careers host for a company (``www.`` stripped), or ``None``.
+
+    Used by the front-end's Add-tab duplicate guard so pasting a careers URL
+    for an already-tracked company is matched by HOST, not just by display
+    name (a display name like "L3Harris Technologies" never parses to a host).
+    """
+    if not careers_url:
+        return None
+    raw = careers_url.strip()
+    if not raw:
+        return None
+    split = urlsplit(raw if "//" in raw else f"https://{raw}")
+    host = (split.netloc or split.path).split("/", 1)[0].lower()
+    host = host.split(":", 1)[0].removeprefix("www.")
+    return host or None
+
+
 def _tracked_companies(session: Session) -> list[dict[str, object]]:
     """The actively-tracked employers we actually pull jobs from.
 
     Uses the EXACT same predicate as the ``tracked_company_count`` summary
     (active + enabled + a real connector, i.e. not an ``html`` stub) so the
     list and the count never disagree. Each item carries the company name, its
-    ATS, and the number of ACTIVE jobs currently held for that company. Sorted
-    by name (case-insensitive) for stable, human-friendly output.
+    ATS, a careers ``host`` (derived from ``careers_url`` so the Add tab can
+    block a pasted careers URL for an already-tracked company), and the number
+    of ACTIVE jobs currently held. Sorted by name (case-insensitive) for
+    stable, human-friendly output.
     """
     rows = session.execute(
-        select(Company.id, Company.name, Company.ats).where(
+        select(Company.id, Company.name, Company.ats, Company.careers_url).where(
             Company.active.is_(True),
             Company.enabled.is_(True),
             Company.ats.not_in(_STUB_ATS),
@@ -220,14 +241,19 @@ def _tracked_companies(session: Session) -> list[dict[str, object]]:
     ).all()
 
     companies: list[dict[str, object]] = []
-    for company_id, name, ats in rows:
+    for company_id, name, ats, careers_url in rows:
         job_count = session.scalar(
             select(func.count())
             .select_from(Job)
             .where(Job.company_id == company_id, Job.status == "active")
         )
         companies.append(
-            {"name": name, "ats": ats, "job_count": int(job_count or 0)}
+            {
+                "name": name,
+                "ats": ats,
+                "host": _careers_host(careers_url),
+                "job_count": int(job_count or 0),
+            }
         )
 
     companies.sort(key=lambda c: str(c["name"]).casefold())
