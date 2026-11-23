@@ -13,7 +13,9 @@ the main screening pass.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -30,6 +32,14 @@ logger = logging.getLogger("jobtracker.services.audit")
 #: Rule decisions that are user policy, not text parsing, so auditing them
 #: only adds noise (the user is not eligible for any US defense role).
 _NOT_AUDITED = {"not_student_role", "foreign_country", "itar_company", "removed"}
+#: Regular jobs (full-time, new grad, professional titles) are only audited
+#: when the title itself says it is a student role.
+_REGULAR_JOB_RULES = {"employment_type", "professional_role"}
+_STUDENT_TITLE_RE = re.compile(
+    r"\b(?:intern(?:ship)?s?|co-?ops?|coop|students?|stagiaires?|stages?|"
+    r"work[- ]?terms?|placements?)\b",
+    re.IGNORECASE,
+)
 
 
 def audit_candidates(session: Session, *, limit: int) -> list[tuple[Job, str]]:
@@ -51,6 +61,8 @@ def audit_candidates(session: Session, *, limit: int) -> list[tuple[Job, str]]:
         failed = set(job.eligibility_failed_rules or [])
         if not failed or failed & _NOT_AUDITED:
             continue
+        if failed & _REGULAR_JOB_RULES and not _STUDENT_TITLE_RE.search(job.title or ""):
+            continue
         if (job.country or "").lower() not in ("", "canada", "united states"):
             continue
         audit = job.rule_audit if isinstance(job.rule_audit, dict) else None
@@ -64,6 +76,21 @@ def audit_candidates(session: Session, *, limit: int) -> list[tuple[Job, str]]:
         if len(out) >= limit:
             break
     return out
+
+
+def _with_rule_note(prompt_input, job: Job):
+    """Put the rule's reason and the quoted text first, so the AI checks THAT
+    decision (long descriptions are truncated and can lose the key line)."""
+    reasons = "; ".join(str(r) for r in (job.eligibility_reasons or []))
+    quotes = " | ".join(str(e)[:200] for e in (job.eligibility_evidence or [])[:3])
+    note = (
+        f"[Screening note: the rules hid this posting because: {reasons}. "
+        f"Quoted from the posting: {quotes or 'n/a'}. Check whether that is "
+        "correct for this student.]\n\n"
+    )
+    return dataclasses.replace(
+        prompt_input, description=note + (prompt_input.description or "")
+    )
 
 
 def audit_rejected_jobs(
@@ -90,7 +117,7 @@ def audit_rejected_jobs(
         return 0
     profile, _version = resolve_profile(session, settings=settings)
     prompt = build_batch_analysis_prompt(
-        profile, [_job_prompt_input(job, name) for job, name in batch]
+        profile, [_with_rule_note(_job_prompt_input(job, name), job) for job, name in batch]
     )
     try:
         raw = provider.analyze(prompt)

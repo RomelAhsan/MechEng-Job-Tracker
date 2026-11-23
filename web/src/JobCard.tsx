@@ -49,10 +49,41 @@ function duration(job: Job): string {
 function postedAgo(job: Job): string | null {
   const days = job.posted_days_ago;
   if (days == null) return null;
-  if (days <= 0) return "Posted today";
-  if (days === 1) return "Posted 1 day ago";
-  if (job.posted_days_ago_is_lower_bound) return `Posted ${days}+ days ago`;
-  return `Posted ${days} days ago`;
+  // No posting date from the employer: say so instead of "Posted".
+  const verb = job.posted_date_source === "first_seen" ? "First seen" : "Posted";
+  if (days <= 0) return `${verb} today`;
+  if (days === 1) return `${verb} 1 day ago`;
+  if (job.posted_days_ago_is_lower_bound) return `${verb} ${days}+ days ago`;
+  return `${verb} ${days} days ago`;
+}
+
+function dateSourceNote(job: Job): string | null {
+  if (job.posted_days_ago == null) return null;
+  if (job.posted_date_source === "employer") return "date from the employer's job board";
+  if (job.posted_date_source === "first_seen") {
+    return "the employer gives no posting date; this is when we first found it";
+  }
+  return null;
+}
+
+function LinkStatus({ job }: { job: Job }) {
+  if (job.link_status === "cant_check") {
+    return (
+      <p className="link-status link-cant" role="note">
+        <span className="tag tag-warn">Can't be checked</span>{" "}
+        {job.cant_check_reason
+          ? `${job.cant_check_reason.charAt(0).toUpperCase()}${job.cant_check_reason.slice(1)}.`
+          : "The job site did not let us check this posting."}
+        {job.link_checked_ago ? ` Last confirmed open ${job.link_checked_ago}.` : ""}
+      </p>
+    );
+  }
+  if (job.link_status === "open" && job.link_checked_ago) {
+    return (
+      <p className="link-status link-open">✓ Still open (checked {job.link_checked_ago})</p>
+    );
+  }
+  return null;
 }
 
 function AiReasoningPanel({ r }: { r: AiReasoning }) {
@@ -104,7 +135,15 @@ function AiReasoningPanel({ r }: { r: AiReasoning }) {
   );
 }
 
-export function JobCard({ job }: { job: Job }) {
+export function JobCard({
+  job,
+  onReportDead,
+}: {
+  job: Job;
+  // Called when the user reports the apply link as dead. Omitted = no button.
+  onReportDead?: (job: Job) => void;
+}) {
+  const note = dateSourceNote(job);
   return (
     <article className="card">
       <header className="card-head">
@@ -173,13 +212,17 @@ export function JobCard({ job }: { job: Job }) {
           )}
         </div>
         <p className="freshness">
-          {postedAgo(job) ? <span className="posted-ago">{postedAgo(job)}</span> : null}
-          {postedAgo(job) && job.first_seen_ago ? " · " : ""}
-          {job.first_seen_ago ? `Found ${job.first_seen_ago}` : ""}
-          {job.source_last_checked_ago
-            ? ` · board checked ${job.source_last_checked_ago}`
+          {postedAgo(job) ? (
+            <span className="posted-ago" title={note ?? undefined}>
+              {postedAgo(job)}
+            </span>
+          ) : null}
+          {note ? <span className="date-source"> ({note})</span> : null}
+          {postedAgo(job) && job.first_seen_ago && job.posted_date_source !== "first_seen"
+            ? ` · found ${job.first_seen_ago}`
             : ""}
         </p>
+        <LinkStatus job={job} />
         {job.ai_reasoning && <AiReasoningPanel r={job.ai_reasoning} />}
         <a
           className="report-wrong"
@@ -190,6 +233,16 @@ export function JobCard({ job }: { job: Job }) {
         >
           ⚑ Report wrong match
         </a>
+        {onReportDead && (
+          <button
+            type="button"
+            className="report-dead"
+            onClick={() => onReportDead(job)}
+            title="The apply link doesn't work or the posting is closed: hide it for good."
+          >
+            ✕ Report dead link
+          </button>
+        )}
       </footer>
     </article>
   );

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,7 @@ from jobtracker.db.models import Company, Job, SourceHealth
 from jobtracker.normalize.posting_date import RELATIVE_LOWER_BOUND_DAYS
 from jobtracker.services import dashboard_service
 from jobtracker.services.dashboard_service import JobView, humanize_ago
+from jobtracker.services.ingest_service import plain_reason
 
 logger = logging.getLogger("jobtracker.services.web_export")
 
@@ -338,6 +340,12 @@ def shown_views(
     return [v for v in views if is_fresh(v, now=now) and v.job_id not in reported]
 
 
+_STUDENT_TITLE_RE = re.compile(
+    r"\b(?:intern(?:ship)?s?|co-?ops?|coop|students?|stagiaires?|stages?|"
+    r"work[- ]?terms?|placements?|apprentice\w*)\b",
+    re.IGNORECASE,
+)
+
 #: Plain-English labels for the screening rules, used in the hidden-jobs list.
 RULE_LABELS: dict[str, str] = {
     "removed": "Posting was removed",
@@ -351,7 +359,7 @@ RULE_LABELS: dict[str, str] = {
     "degree": "Requires a completed or graduate degree",
     "experience": "Requires work experience",
     "term": "Work term does not match your terms",
-    "duration": "Duration does not match (not 4 months)",
+    "duration": "Duration is outside your 3-4 month range",
     "not_relevant": "Not a mechanical-engineering role",
     "ai_rejected": "The AI check found a problem",
     "ai_pending": "Waiting for the AI check",
@@ -404,7 +412,15 @@ def _coverage(
             health.last_successful_check_at else None
         if not supported:
             status = "not_supported"
-        elif health is None or health.last_checked_at is None:
+        elif (
+            health is None
+            or health.last_checked_at is None
+            or (health.last_status == "requires_fallback" and not last_ok)
+            or (health.last_status == "requires_fallback" and company.ats not in _STUB_ATS
+                and not (last_ok and now - last_ok <= timedelta(hours=3)))
+        ):
+            # Never read with its current connector yet (e.g. just upgraded
+            # from an unsupported placeholder).
             status = "never_checked"
         elif health.last_status == "ok" or (last_ok and now - last_ok <= timedelta(hours=3)):
             status = "ok"
@@ -426,7 +442,7 @@ def _coverage(
                 "last_success_ago": humanize_ago(last_ok, now=now),
                 "failing_since": _iso(health.failing_since) if health else None,
                 "error": (
-                    health.last_error if health and status == "failing" else None
+                    plain_reason(health.last_error) if health and status == "failing" else None
                 ),
                 "via": health.last_fetch_via if health else None,
                 "postings": int(active),
@@ -511,6 +527,13 @@ def hidden_jobs(
         failed = list(job.eligibility_failed_rules or [])
         if "not_student_role" in failed:
             continue
+        # A regular full-time/new-grad job whose description merely mentions
+        # students is not a student role: leave it out unless the TITLE says
+        # it is one (keeps the list to postings worth auditing).
+        if set(failed) & {"employment_type", "professional_role"} and not (
+            _STUDENT_TITLE_RE.search(job.title or "")
+        ):
+            continue
         reasons: list[dict[str, str]] = []
         texts = list(job.eligibility_reasons or [])
         for i, rule in enumerate(failed):
@@ -518,7 +541,7 @@ def hidden_jobs(
                 {
                     "code": rule,
                     "label": RULE_LABELS.get(rule, rule),
-                    "detail": texts[i] if i < len(texts) else "",
+                    "detail": (texts[i] if i < len(texts) else "")[:240],
                 }
             )
         if job.job_id in reported:
@@ -566,7 +589,7 @@ def hidden_jobs(
                 "application_url": job.application_url,
                 "group": group,
                 "reasons": reasons,
-                "evidence": [str(e)[:200] for e in (job.eligibility_evidence or [])][:3],
+                "evidence": [str(e)[:200] for e in (job.eligibility_evidence or [])][:1],
                 "ai_audit": (
                     {
                         "ai_eligible": bool(audit.get("ai_eligible")),

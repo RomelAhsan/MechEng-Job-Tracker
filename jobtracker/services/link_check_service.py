@@ -223,7 +223,9 @@ def run_link_checks(
 
         result = check_job(http, job, company)
         if result is None:
-            reason = (health.last_error if health else None) or (
+            from jobtracker.services.ingest_service import plain_reason
+
+            reason = plain_reason(health.last_error if health else None) or (
                 "the job board has not been read successfully recently"
             )
             result = LinkCheck(CANT_CHECK, reason)

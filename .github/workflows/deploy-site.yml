@@ -6,7 +6,8 @@
 #   * on push to main that touches the web app or the exporter,
 #   * manually (workflow_dispatch),
 #   * and automatically after each "Poll job boards" run finishes, so every
-#     15-minute poll refreshes the live site.
+#     poll (about every 10 minutes) refreshes the live site,
+#   * and when a job is reported as a dead link from the website.
 #
 # ONE-TIME SETUP (the repo owner must do this once, in the browser):
 #   Settings -> Pages -> Build and deployment -> Source = "GitHub Actions".
@@ -19,6 +20,8 @@ on:
       - "web/**"
       - "jobtracker/services/web_export_service.py"
       - ".github/workflows/deploy-site.yml"
+      # A job reported as a dead link from the website: redeploy without it.
+      - "config/reported_jobs.json"
   workflow_dispatch:
   workflow_run:
     workflows: ["Poll job boards"]
@@ -37,6 +40,9 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    # Skip polls that were cancelled before running (queued self-chain runs
+    # collapse into one); there is nothing new to publish for those.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

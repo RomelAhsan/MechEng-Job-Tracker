@@ -11,6 +11,7 @@ source failing never aborts the whole run; every failure is recorded against
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -199,6 +200,29 @@ def describe_error(exc: BaseException) -> str:
     if isinstance(exc, httpx.TransportError):
         return "could not connect to the job site"
     return f"the board could not be read ({type(exc).__name__})"
+
+
+def plain_reason(text: str | None) -> str | None:
+    """Turn a stored error into plain English (older rows hold raw repr text)."""
+    if not text:
+        return None
+    if "Error(" not in text and "error '" not in text.lower():
+        return text
+    match = re.search(r"\b(\d{3})\b", text)
+    status = int(match.group(1)) if match else None
+    if status == 429:
+        return "the job site is refusing our checker (too many requests from GitHub's servers)"
+    if status and status >= 520:
+        return "the job site's network is refusing connections from GitHub's servers"
+    if status in (401, 403):
+        return "the job site's bot protection is blocking our checker"
+    if status == 404:
+        return "the job board address no longer works (HTTP 404)"
+    if status:
+        return f"the job site answered HTTP {status}"
+    if "Timeout" in text:
+        return "the job site did not answer in time"
+    return "the board could not be read"
 
 
 def _record_error(session: Session, company_id: str, message: str) -> None:

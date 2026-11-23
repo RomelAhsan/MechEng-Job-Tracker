@@ -226,3 +226,39 @@ def test_split_location_space_separated_country_and_city_only() -> None:
     assert split_location("Schenectady")[2] == "United States"
     assert split_location("Brossard")[2] == "Canada"
     assert split_location("London")[2] is None
+
+
+def test_duration_ignores_experience_and_accepts_ranges() -> None:
+    from jobtracker.extract.term import extract_term
+
+    exp = extract_term("Intern", "Minimum 3 months experience required. This is a 4-month co-op.")
+    assert exp.duration_months == 4
+    no_term = extract_term("Intern", "At least 6 months of relevant experience.")
+    assert no_term.duration_months is None
+    rng = extract_term(
+        "Intern, Engineering", "An anticipated term of 3-6 months beginning in May 2027."
+    )
+    assert (rng.duration_months, rng.duration_label) == (3, "3-6 months")
+
+
+def test_duration_range_overlapping_profile_passes() -> None:
+    from types import SimpleNamespace
+
+    from jobtracker.extract.degree_experience import DegreeExperienceExtraction
+    from jobtracker.schemas.user_profile import UserProfile
+    from jobtracker.screen.eligibility import compute_stage1_eligibility
+
+    profile = UserProfile(minimum_duration_months=3, maximum_duration_months=4)
+
+    def verdict(months: int, label: str):
+        job = SimpleNamespace(
+            status="active", employment_type="internship", title="Mechanical Intern",
+            description="", country="Canada", eligibility_status=None,
+            citizenship_requirement="", term_season="unknown",
+            duration_months=months, duration_label=label, location="Toronto",
+        )
+        return compute_stage1_eligibility(job, profile, DegreeExperienceExtraction())
+
+    assert "duration" not in verdict(3, "3-6 months").failed_rules
+    assert "duration" not in verdict(3, "3-month").failed_rules
+    assert "duration" in verdict(8, "8-month").failed_rules

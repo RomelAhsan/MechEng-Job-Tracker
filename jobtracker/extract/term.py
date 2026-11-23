@@ -90,9 +90,19 @@ _WORD_NUM = {
     "sixteen": 16, "eighteen": 18,
 }
 _DURATION_RE = re.compile(
-    r"\b(?P<n>\d{1,2}|" + "|".join(_WORD_NUM) + r")(?:\s*(?:to|-|–)\s*\d{1,2})?"
+    r"\b(?P<n>\d{1,2}|" + "|".join(_WORD_NUM) + r")(?:\s*(?:to|-|–)\s*(?P<hi>\d{1,2}))?"
     r"[\s-]*(?:month|mois)s?\b",
     re.IGNORECASE,
+)
+# "3 months of experience", "minimum 6 months experience": a requirement about
+# the candidate, not the length of the work term.
+_EXPERIENCE_AFTER_RE = re.compile(
+    r"^\W{0,3}(?:of\s+)?(?:(?:relevant|related|professional|work|industry|"
+    r"hands-on|practical|prior)\s+)*(?:experience|exp\b)",
+    re.IGNORECASE,
+)
+_EXPERIENCE_BEFORE_RE = re.compile(
+    r"(?:minimum|at\s+least|min\.?)\s*(?:of\s*)?$", re.IGNORECASE
 )
 _YEAR_RE = re.compile(r"\b(20\d\d)\b")
 
@@ -175,15 +185,26 @@ class TermExtraction:
         return ",".join(self.terms) if self.terms else TermSeason.UNKNOWN.value
 
 
-def _duration(text: str) -> tuple[int, str] | None:
-    match = _DURATION_RE.search(text)
-    if match is None:
-        return None
-    raw = match.group("n").lower()
-    months = _WORD_NUM.get(raw) if not raw.isdigit() else int(raw)
-    if not months or months <= 0 or months > 24:
-        return None
-    return months, match.group(0).strip()
+def _duration(text: str) -> tuple[int, str, int | None] | None:
+    """First stated work-term length: ``(months, matched text, range end)``.
+
+    Mentions of required EXPERIENCE ("3 months of experience") are skipped.
+    For a range ("3-6 months") the low end is returned with the high end, so
+    the eligibility rule can accept a range that includes the target length.
+    """
+    for match in _DURATION_RE.finditer(text):
+        after = text[match.end(): match.end() + 40]
+        before = text[max(0, match.start() - 20): match.start()]
+        if _EXPERIENCE_AFTER_RE.search(after) or _EXPERIENCE_BEFORE_RE.search(before):
+            continue
+        raw = match.group("n").lower()
+        months = _WORD_NUM.get(raw) if not raw.isdigit() else int(raw)
+        if not months or months <= 0 or months > 24:
+            continue
+        hi = match.group("hi")
+        high = int(hi) if hi and hi.isdigit() and months < int(hi) <= 24 else None
+        return months, match.group(0).strip(), high
+    return None
 
 
 # Season/month mentions inside a graduation-date sentence ("Expected graduation
@@ -232,8 +253,10 @@ def _extract(text: str, country: str | None) -> TermExtraction:
 
     dur = _duration(text)
     if dur is not None:
-        result.duration_months, ev = dur
-        result.duration_label = f"{dur[0]}-month"
+        result.duration_months, ev, high = dur
+        result.duration_label = (
+            f"{dur[0]}-{high} months" if high else f"{dur[0]}-month"
+        )
         evidence.append(ev)
 
     # 1) Explicit month ranges (most reliable).

@@ -24,7 +24,9 @@ user:
     - "Spring"
     - "Fall"
   preferred_duration_months: 4
-  minimum_duration_months: 4
+  # Waterloo: a work term is "typically four months (12-16 weeks)", so a
+  # 3-month (12-week) internship counts as one term.
+  minimum_duration_months: 3
   maximum_duration_months: 4
   interests:
     - robotics

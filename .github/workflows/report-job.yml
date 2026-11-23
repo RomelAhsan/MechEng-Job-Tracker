@@ -1,0 +1,75 @@
+# Triggered by the "Report dead link" button on the website (and by "Restore"
+# in the Hidden jobs tab). It records the job in config/reported_jobs.json and
+# commits it; the site redeploys from that commit and stops showing the job.
+#
+# The website calls the GitHub REST workflow-dispatch API with the fine-grained
+# token the user saved in their browser (never committed). No other secrets are
+# used here.
+name: Report a job
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "job_id from the feed"
+        required: true
+        type: string
+      action:
+        description: "hide (dead link) or restore"
+        required: false
+        default: hide
+        type: string
+      title:
+        description: "Job title (for the record only)"
+        required: false
+        default: ""
+        type: string
+      company:
+        description: "Company (for the record only)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      # Inputs are passed as environment variables (never pasted into the
+      # script), and validated, so a crafted title cannot run commands.
+      - name: Update the reported-jobs list
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          ACTION: ${{ inputs.action }}
+          TITLE: ${{ inputs.title }}
+          COMPANY: ${{ inputs.company }}
+        run: python3 scripts/report_job.py
+
+      - name: Commit and push
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config/reported_jobs.json
+          if git diff --cached --quiet; then
+            echo "Nothing to change."
+            exit 0
+          fi
+          git commit -m "chore: ${ACTION} reported job ${JOB_ID}"
+          for attempt in 1 2 3 4 5; do
+            if git push; then exit 0; fi
+            sleep $(( attempt * 3 ))
+            git pull --rebase
+          done
+          echo "::error::Could not push the report after 5 attempts."
+          exit 1

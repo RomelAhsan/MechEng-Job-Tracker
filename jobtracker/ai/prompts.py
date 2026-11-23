@@ -101,11 +101,21 @@ def build_profile_summary(profile: dict) -> str:
         ("Program", profile.get("program")),
         ("University", profile.get("university")),
         ("Year", profile.get("year")),
+        ("Expected graduation year", profile.get("expected_graduation_year")),
         ("Citizenship", profile.get("citizenship")),
         ("Work authorization", profile.get("work_authorization")),
         ("Preferred locations", profile.get("preferred_locations")),
         ("Available terms", profile.get("available_terms")),
         ("Preferred duration (months)", profile.get("preferred_duration_months")),
+        (
+            "Acceptable duration (months)",
+            (
+                f"{profile.get('minimum_duration_months')}-"
+                f"{profile.get('maximum_duration_months')}"
+            )
+            if profile.get("minimum_duration_months") and profile.get("maximum_duration_months")
+            else None,
+        ),
         ("Interests", profile.get("interests")),
         ("Skills", profile.get("skills")),
     )
@@ -127,7 +137,7 @@ def build_profile_summary(profile: dict) -> str:
 #: AMBIGUOUS ones, and it must resolve ambiguity conservatively.
 #: Bumped whenever the rules below change, so cached verdicts made under older
 #: rules are re-done instead of being trusted (see ai_service._find_cache).
-PROMPT_VERSION = 5
+PROMPT_VERSION = 6
 
 ELIGIBILITY_RULES = (
     "=== YOUR JOB ===\n"
@@ -143,7 +153,8 @@ ELIGIBILITY_RULES = (
     "First-year undergraduate in Mechanical Engineering at the University of "
     "Waterloo. CANADIAN citizen only: no US citizenship, no US green card, no "
     "security clearance, no work permit for any other country. Has NOT "
-    "completed any degree. Seeks a 4-month co-op/internship in any term.\n"
+    "completed any degree. Seeks a co-op/internship of one work term (12-16 "
+    "weeks, i.e. 3-4 months) in any term.\n"
     "=== RULES ===\n"
     "1. It must be a student role (co-op / internship / student position). A "
     "regular full-time or permanent job is not eligible, even if junior.\n"
@@ -164,11 +175,14 @@ ELIGIBILITY_RULES = (
     "5. LEVEL: not eligible if it requires a completed degree (e.g. 'Bachelor's "
     "degree in ...' as a requirement, not 'pursuing'), a Master's/PhD/MBA, "
     "graduate-student status, 'new grad', final-year/upper-year-only students, "
-    "seniority, or years of professional experience.\n"
-    "6. TERM: the student can work ANY 4-month term (Jan-Apr, May-Aug, or "
-    "Sep-Dec), so the season never disqualifies. Not eligible only if the "
-    "posting requires a duration that cannot be 4 months (e.g. 8 or 12 months "
-    "only, or 'full year').\n"
+    "seniority, or years of professional experience. Also not eligible if it "
+    "requires graduating within a window that ends before the student's "
+    "'Expected graduation year' in the profile (e.g. 'expected to graduate "
+    "between Fall 2027 and Summer 2028' when the student graduates in 2031).\n"
+    "6. TERM: the student can work ANY term (Jan-Apr, May-Aug, or Sep-Dec), "
+    "so the season never disqualifies. Not eligible only if the posting "
+    "requires a duration that cannot fit one 12-16 week work term (e.g. 6, 8 "
+    "or 12 months only, or 'full year'). A 10-16 week internship is fine.\n"
     "7. FIELD: eligible if the work is mechanical, mechatronics, robotics, "
     "manufacturing, hardware, aerospace/mechanical, automotive, thermal, "
     "energy/power-plant, or product-design engineering. Not eligible for pure "

@@ -1,4 +1,4 @@
-import type { Feed } from "./types";
+import type { Feed, HiddenFeed } from "./types";
 
 // Fetch the static feed. The path is relative to the Vite `base`
 // (/MechEng-Job-Tracker/), so on GitHub Pages this resolves to
@@ -11,4 +11,15 @@ export async function loadFeed(signal?: AbortSignal): Promise<Feed> {
     throw new Error(`Could not load jobs (HTTP ${res.status}).`);
   }
   return (await res.json()) as Feed;
+}
+
+// The hidden-jobs list is a separate (larger) file, loaded only when the
+// "Hidden jobs" tab is opened.
+export async function loadHidden(signal?: AbortSignal): Promise<HiddenFeed> {
+  const url = `${import.meta.env.BASE_URL}data/hidden.json`;
+  const res = await fetch(url, { signal, cache: "no-cache" });
+  if (!res.ok) {
+    throw new Error(`Could not load hidden jobs (HTTP ${res.status}).`);
+  }
+  return (await res.json()) as HiddenFeed;
 }
