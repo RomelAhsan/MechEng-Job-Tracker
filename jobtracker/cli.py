@@ -441,6 +441,56 @@ def workday_filters(
     typer.echo(f"Wrote {len(plans)} boards to {path}.")
 
 
+@app.command("check-links")
+def check_links() -> None:
+    """Check that every job the website shows is still open.
+
+    Closed postings are removed at once; postings whose job site refuses our
+    checker are kept and tagged "can't be checked" with the reason.
+    """
+    from jobtracker.connectors.http import HttpClient
+    from jobtracker.services import link_check_service, web_export_service
+
+    settings = get_settings().model_copy(update={"http_max_retries": 1})
+    with _session_scope() as session, HttpClient(settings) as http:
+        ids = [v.job_id for v in web_export_service.shown_views(session)]
+        summary = link_check_service.run_link_checks(session, http, ids)
+    typer.echo(
+        f"Link check: {summary.checked} jobs, {summary.open} open, "
+        f"{len(summary.closed)} closed and removed, {summary.cant_check} can't be checked."
+    )
+
+
+@app.command("audit-rejections")
+def audit_rejections(
+    limit: int = typer.Option(12, "--limit", help="Jobs per run (one AI request)."),
+    min_interval_hours: float = typer.Option(
+        2.0, "--min-interval-hours", help="Skip if the last audit was more recent."
+    ),
+) -> None:
+    """AI spot-check of a few jobs the rules hid (flags possible rule mistakes)."""
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from jobtracker.services import audit_service
+
+    marker = Path("state/rule_audit_last.txt")
+    if marker.exists() and min_interval_hours > 0:
+        try:
+            last = datetime.fromisoformat(marker.read_text(encoding="utf-8").strip())
+            hours = (datetime.now(UTC) - last).total_seconds() / 3600
+            if hours < min_interval_hours:
+                typer.echo(f"Last rule audit {hours:.1f} h ago; skipped.")
+                return
+        except ValueError:
+            pass
+    with _session_scope() as session:
+        done = audit_service.audit_rejected_jobs(session, limit=limit)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
+    typer.echo(f"Rule audit: {done} jobs checked by the AI.")
+
+
 @app.command("screen")
 def screen(
     only_if_rules_changed: bool = typer.Option(

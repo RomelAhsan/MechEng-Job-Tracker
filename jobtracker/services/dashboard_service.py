@@ -90,6 +90,13 @@ class JobView:
     #: ``application_status`` is None so single-profile callers are unchanged.
     is_saved: bool = False
     application_status: str | None = None
+    #: Start of the work term when the posting states a year (drives the
+    #: "never hide a role whose term has not started" freshness rule).
+    term_start_date: datetime | None = None
+    #: Result of the last "is this posting still open?" check.
+    link_status: str | None = None
+    link_checked_at: datetime | None = None
+    link_check_reason: str | None = None
 
 
 @dataclass
@@ -279,6 +286,10 @@ def _to_view(
         skills=list(job.skills or []),
         is_saved=is_saved,
         application_status=application_status,
+        term_start_date=job.term_start_date,
+        link_status=job.link_status,
+        link_checked_at=job.link_checked_at,
+        link_check_reason=job.link_check_reason,
     )
 
 
