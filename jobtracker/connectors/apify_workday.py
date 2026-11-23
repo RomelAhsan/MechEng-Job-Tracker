@@ -220,6 +220,11 @@ class ApifyWorkdayConnector(Connector):
         interval = float(self._settings.apify_fallback_interval_hours) * 3600
         return self._budget.due(company_id, interval)
 
+    def swept_before(self, company_id: str, when: float) -> bool:
+        """True when ``company_id`` has not been swept since ``when``."""
+        last = self._budget.last_sweep(company_id)
+        return last is None or last < when
+
     def mark_fetched(self, company_ids: list[str]) -> None:
         for company_id in company_ids:
             self._budget.mark_run(company_id)

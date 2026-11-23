@@ -35,6 +35,10 @@ on:
         description: "Unix time before which this run waits (set by the previous run)"
         required: false
         default: ""
+      sweep_now:
+        description: "Check every Workday board through Apify now (ignores the 4-hour spacing)"
+        required: false
+        default: "false"
 
 # Never let two polls overlap: they would fight over the same database.
 concurrency:
@@ -74,6 +78,8 @@ jobs:
       # Blank = those companies simply yield no jobs. Usage is hard-capped per
       # day in-app so the free monthly credit is never exceeded.
       APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      # "Run workflow" option: sweep all Workday boards through Apify now.
+      APIFY_FORCE_SWEEP: ${{ inputs.sweep_now == 'true' && 'true' || 'false' }}
       # Consumed by the `create-user` bootstrap step.
       JOBTRACKER_USER_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
       JOBTRACKER_USER_PASSWORD: ${{ secrets.USER_PASSWORD }}

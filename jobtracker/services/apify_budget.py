@@ -109,6 +109,11 @@ class ApifyBudget:
             return True
         return datetime.now(UTC).timestamp() - last >= interval_seconds
 
+    def last_sweep(self, company_id: str) -> float | None:
+        """Unix time ``company_id`` was last swept through Apify (or None)."""
+        value = self._load().get(f"{SWEEP_MARK}{company_id}")
+        return float(value) if value is not None else None
+
     def mark_run(self, company_id: str) -> None:
         ledger = self._load()
         ledger[f"{SWEEP_MARK}{company_id}"] = datetime.now(UTC).timestamp()

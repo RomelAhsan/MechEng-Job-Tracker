@@ -412,11 +412,22 @@ class _WorkdayFallback:
             connector = self._get()
             if not connector.can_start():
                 return
-            if self._plans is None:
-                from jobtracker.connectors.workday_targeting import load_plans
+            from jobtracker.connectors.workday_targeting import (
+                load_plans,
+                sweep_requested_at,
+            )
 
+            if self._plans is None:
                 self._plans = load_plans()
-            due = [c for c in self._blocked if connector.due(c.id)]
+            force = bool(get_settings().apify_force_sweep)
+            requested = sweep_requested_at()
+            due = [
+                c
+                for c in self._blocked
+                if force
+                or connector.due(c.id)
+                or (requested is not None and connector.swept_before(c.id, requested))
+            ]
             urls: list[str] = []
             for company in due:
                 urls.extend(
