@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     #: (see ``apify_monthly_budget_usd``) is the real ceiling: when it runs low
     #: the sweep is skipped until the allowance builds up again.
     apify_fallback_interval_hours: float = 4.0
+    #: Sweep every blocked Workday board through Apify on this run even if it
+    #: was swept recently (env APIFY_FORCE_SWEEP; set by the poll workflow's
+    #: "sweep_now" option). The free-credit allowance still applies.
+    apify_force_sweep: bool = False
     #: Do not start an Apify run when today's rolled allowance is below this.
     apify_min_allowance_usd: float = 0.05
     #: Seconds the poll waits for the Apify listing run at the end.

@@ -269,11 +269,38 @@ def load_plans(path: str | Path = DEFAULT_FILTERS_FILE) -> dict[str, TargetingPl
     }
 
 
+def sweep_requested_at(path: str | Path = DEFAULT_FILTERS_FILE) -> float | None:
+    """Unix time of the last "check every Workday board now" request.
+
+    Stored as ``sweep_requested_at`` (ISO time) in the filters file. Every
+    board not swept since then is swept on the next run, whatever the usual
+    spacing. A commit is used (not a workflow input) so the request cannot be
+    lost to the self-chaining runs replacing each other in the queue.
+    """
+    from datetime import datetime
+
+    file = Path(path)
+    if not file.exists():
+        return None
+    try:
+        data = json.loads(file.read_text(encoding="utf-8"))
+        value = data.get("sweep_requested_at") if isinstance(data, dict) else None
+        return datetime.fromisoformat(str(value)).timestamp() if value else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def save_plans(
     plans: dict[str, TargetingPlan], path: str | Path = DEFAULT_FILTERS_FILE
 ) -> Path:
     file = Path(path)
     file.parent.mkdir(parents=True, exist_ok=True)
+    previous: dict = {}
+    if file.exists():
+        try:
+            previous = json.loads(file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = {}
     payload = {
         "about": (
             "Workday search filters per company: student worker types and "
@@ -283,5 +310,7 @@ def save_plans(
         ),
         "boards": {cid: plans[cid].to_dict() for cid in sorted(plans)},
     }
+    if isinstance(previous, dict) and previous.get("sweep_requested_at"):
+        payload["sweep_requested_at"] = previous["sweep_requested_at"]
     file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return file

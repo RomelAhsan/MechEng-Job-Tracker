@@ -204,3 +204,49 @@ def test_http_client_stops_asking_a_site_that_refuses_us() -> None:
             pass
     # Two hosts refused us (no retries each); the other two were not asked.
     assert calls == ["a.wd3.myworkdayjobs.com", "b.wd3.myworkdayjobs.com"]
+
+
+def test_force_sweep_ignores_recent_sweeps(session: Session, tmp_path, monkeypatch) -> None:
+    session.add(
+        Company(id="ge", name="GE", ats="workday", enabled=True, active=True,
+                careers_url=f"{BASE}/Site")
+    )
+    session.flush()
+    client = _FakeClient()
+    connector = _connector(tmp_path, client)
+    connector.mark_fetched(["ge"])  # swept moments ago
+    request = httpx.Request("POST", f"{BASE}/wday/cxs/ge/Site/jobs")
+    blocked = BlockedError(
+        "429", request=request, response=httpx.Response(429, request=request), reason="x"
+    )
+
+    def sweep(force: bool) -> int:
+        settings = Settings(user_file="config/user.yaml", apify_force_sweep=force)
+        monkeypatch.setattr(ingest_service, "get_settings", lambda: settings)
+        fallback = ingest_service._WorkdayFallback()
+        fallback._connector = connector
+        fallback._plans = {}
+        fallback.note_blocked(session.get(Company, "ge"), blocked)
+        before = len(client.started)
+        fallback.start()
+        return len(client.started) - before
+
+    assert sweep(False) == 0
+    assert sweep(True) == 1
+
+
+def test_committed_sweep_request_makes_boards_due(tmp_path) -> None:
+    import json as _json
+    import time as _time
+
+    from jobtracker.connectors.workday_targeting import sweep_requested_at
+
+    client = _FakeClient()
+    connector = _connector(tmp_path, client)
+    connector.mark_fetched(["ge"])
+    path = tmp_path / "filters.json"
+    path.write_text(_json.dumps({"boards": {}, "sweep_requested_at": "2999-01-01T00:00:00+00:00"}))
+    requested = sweep_requested_at(path)
+    assert requested is not None and requested > _time.time()
+    assert connector.swept_before("ge", requested)  # swept before the request
+    assert not connector.swept_before("ge", 0.0)
