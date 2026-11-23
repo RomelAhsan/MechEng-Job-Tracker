@@ -199,9 +199,25 @@ class OracleConnector(Connector):
 
     def _to_raw(self, origin: str, site: str, req: dict) -> RawJob:
         req_id = str(req.get("Id"))
+        public_url = f"{origin}/hcmUI/CandidateExperience/en/sites/{site}/job/{req_id}"
+        known = self.known_by_id.get(req_id)
+        if known is not None and known.description:
+            # Still listed and already stored: reuse the stored description
+            # instead of one detail request per posting per poll (1,300+
+            # requests for Honeywell made every poll take ~12 minutes).
+            return RawJob(
+                source_job_id=req_id,
+                title=str(req.get("Title") or known.title),
+                location=_location(req) or known.location,
+                description_html=known.description,
+                application_url=public_url,
+                source_url=public_url,
+                posted_at=_parse_dt(req.get("PostedDate")) or known.posted_at,
+                employment_type_hint=req.get("WorkplaceType"),
+                extra={**req, "_reused": True},
+            )
         detail = self._detail(origin, site, req_id)
         description = _description_html(detail or req)
-        public_url = f"{origin}/hcmUI/CandidateExperience/en/sites/{site}/job/{req_id}"
         posted = (
             _parse_dt(req.get("PostedDate"))
             or _parse_dt(req.get("ExternalPostedStartDate"))

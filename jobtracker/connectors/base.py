@@ -57,6 +57,11 @@ class Connector(ABC):
     #: Stored postings keyed by the "/job/..." path of their apply link. Set by
     #: the ingest service before ``fetch``; connectors may ignore it.
     known_jobs: dict[str, KnownJob] = {}
+    #: The same stored postings keyed by ``source_job_id`` and by apply URL, for
+    #: connectors that need one detail request per posting (Oracle, Radancy,
+    #: Phenom): a posting that is still listed reuses its stored description.
+    known_by_id: dict[str, KnownJob] = {}
+    known_by_url: dict[str, KnownJob] = {}
     #: Optional cap on how many postings ``fetch`` should return for a single
     #: call (``None`` = unbounded). Set by the ingest service only for the
     #: one-time add-time poll so a huge board cannot hold the add; connectors

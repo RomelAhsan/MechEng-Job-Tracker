@@ -23,6 +23,52 @@ logger = logging.getLogger("jobtracker.http")
 T = TypeVar("T")
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+#: Status codes a bot-protection layer (Cloudflare) uses to refuse a client.
+_BLOCK_STATUS = {403, 429, 520, 521, 522, 523, 524}
+#: Once this many different hosts under one site (e.g. "myworkdayjobs.com")
+#: have refused us in a run, the rest of that site's hosts are skipped for the
+#: run instead of each being asked again.
+BLOCKED_HOSTS_BEFORE_SKIP = 2
+
+
+class BlockedError(httpx.HTTPStatusError):
+    """The job site refused this client (bot protection / IP throttling).
+
+    Raised without retrying: asking again only adds load and keeps us blocked.
+    ``reason`` is a short human-readable explanation for the website.
+    """
+
+    def __init__(self, message: str, *, request: httpx.Request, response: httpx.Response,
+                 reason: str) -> None:
+        super().__init__(message, request=request, response=response)
+        self.reason = reason
+
+
+def site_of(host: str) -> str:
+    """The registrable site of ``host`` ("ag.wd3.myworkdayjobs.com" -> "myworkdayjobs.com")."""
+    parts = host.lower().split(":", 1)[0].split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host.lower()
+
+
+def block_reason(response: httpx.Response) -> str | None:
+    """Explain a bot-protection refusal, or ``None`` for an ordinary response.
+
+    Only HTML error pages count: Workday answers a closed job with a JSON 403
+    ("permission denied"), which is a real answer, not a block.
+    """
+    if response.status_code not in _BLOCK_STATUS:
+        return None
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type:
+        return None
+    server = response.headers.get("server", "").lower()
+    if response.status_code == 429:
+        return "the job site is refusing our checker (too many requests from GitHub's servers)"
+    if response.status_code == 403 and ("cloudflare" in server or "html" in content_type):
+        return "the job site's bot protection is blocking our checker"
+    if response.status_code >= 520:
+        return "the job site's network is refusing connections from GitHub's servers"
+    return None
 
 
 class PerHostRateLimiter:
@@ -63,6 +109,8 @@ class HttpClient:
         self._rate_limiter = PerHostRateLimiter(
             self.settings.rate_limit_per_host, sleep=sleep
         )
+        #: Hosts that refused us this run, grouped by site.
+        self._blocked_hosts: dict[str, set[str]] = {}
         # Never follow redirects: avoids wandering into auth walls.
         self._client = client or httpx.Client(
             timeout=self.settings.http_timeout,
@@ -108,19 +156,52 @@ class HttpClient:
         params: dict | None = None,
         json_body: dict | None = None,
     ) -> httpx.Response:
-        """Issue a rate-limited request, retrying transient failures."""
+        """Issue a rate-limited request, retrying transient failures.
+
+        A bot-protection refusal raises :class:`BlockedError` at once (no
+        retries), and once :data:`BLOCKED_HOSTS_BEFORE_SKIP` hosts of the same
+        site have refused us, further requests to that site fail fast without
+        being sent.
+        """
         host = urlsplit(url).netloc
+        site = site_of(host)
+        blocked = self._blocked_hosts.get(site, set())
+        if len(blocked) >= BLOCKED_HOSTS_BEFORE_SKIP and host not in blocked:
+            request = httpx.Request(method, url)
+            reason = (
+                "the job site is refusing our checker (other boards on this "
+                "site already refused it this run)"
+            )
+            raise BlockedError(
+                f"Skipped {host}: {site} is refusing this runner",
+                request=request,
+                response=httpx.Response(429, request=request),
+                reason=reason,
+            )
 
         def _do() -> httpx.Response:
             self._rate_limiter.acquire(host)
             response = self._client.request(
                 method, url, params=params, json=json_body
             )
+            reason = block_reason(response)
+            if reason is not None:
+                self._blocked_hosts.setdefault(site, set()).add(host)
+                raise BlockedError(
+                    f"{response.status_code} from {host}: {reason}",
+                    request=response.request,
+                    response=response,
+                    reason=reason,
+                )
             if response.status_code in _RETRYABLE_STATUS:
                 response.raise_for_status()
             return response
 
         return self.retry(_do)
+
+    def blocked_sites(self) -> dict[str, set[str]]:
+        """Sites (and their hosts) that refused this client during the run."""
+        return {site: set(hosts) for site, hosts in self._blocked_hosts.items()}
 
     def retry(self, fn: Callable[[], T]) -> T:
         """Run ``fn`` with exponential backoff on 429/5xx/transport errors."""
@@ -128,6 +209,8 @@ class HttpClient:
         while True:
             try:
                 return fn()
+            except BlockedError:
+                raise
             except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 if isinstance(exc, httpx.HTTPStatusError):
                     status = exc.response.status_code

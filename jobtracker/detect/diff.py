@@ -244,3 +244,6 @@ def _update_source_health(
     if result.new or result.changed or result.removed or result.reactivated:
         health.last_change_detected_at = now
     health.last_status = "ok"
+    health.last_error = None
+    health.consecutive_failures = 0
+    health.failing_since = None

@@ -235,7 +235,17 @@ class PhenomConnector(Connector):
         return payload if isinstance(payload, dict) else {}
 
     def _attach_detail(self, url: str, host: str, raw: RawJob) -> None:
-        """Fetch and attach the FULL description for one job."""
+        """Fetch and attach the FULL description for one job.
+
+        A posting already stored with a description reuses it instead of a
+        detail request (one per posting per poll is thousands for RTX).
+        """
+        known = self.known_by_id.get(raw.source_job_id)
+        if known is not None and known.description:
+            raw.description_html = known.description
+            raw.posted_at = raw.posted_at or known.posted_at
+            raw.extra["_reused"] = True
+            return
         response = self.http.request(
             "POST", url, json_body={"ddoKey": "jobDetail", "jobId": raw.source_job_id}
         )

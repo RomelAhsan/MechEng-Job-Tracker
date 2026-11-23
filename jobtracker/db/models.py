@@ -135,6 +135,19 @@ class Job(Base):
     requires_advanced_degree: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     requires_senior_experience: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     min_years_experience: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Result of the last "is this posting still open?" check: "open",
+    #: "closed" (the job is then removed), or "cant_check" (the employer's job
+    #: site refused our checker). ``link_checked_at`` is the last time the
+    #: posting was confirmed open; ``link_check_reason`` explains a failure.
+    link_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    link_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    link_check_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: AI spot-check of a job the rules hid: {"ai_eligible", "explanation",
+    #: "rules", "checked_at", "_prompt_version"}. Never changes eligibility; it
+    #: only flags rule decisions worth a second look.
+    rule_audit: Mapped[dict | None] = mapped_column(SA_JSON, nullable=True)
 
 
 class JobEvent(Base):
@@ -174,6 +187,14 @@ class SourceHealth(Base):
     error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: Failed checks in a row, and when the current failure streak began.
+    #: Reset by the next successful check.
+    consecutive_failures: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    failing_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: How the last successful check reached the board: "direct" or "apify".
+    last_fetch_via: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class QuarantineItem(Base):

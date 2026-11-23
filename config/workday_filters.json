@@ -1,0 +1,347 @@
+{
+  "about": "Workday search filters per company: student worker types and Canada/US country ids. Regenerate with `python -m jobtracker workday-filters` from a network Workday answers.",
+  "boards": {
+    "airbus-canada": {
+      "full_board": false,
+      "country": {
+        "locationCountry": [
+          "a30a87ed25634629aa6c3958aa2b91ea",
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {
+        "workerSubType": [
+          "f5811cef9cb50193723ed01d470a6e15"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 498
+    },
+    "boeing": {
+      "full_board": false,
+      "country": {
+        "locationCountry": [
+          "a30a87ed25634629aa6c3958aa2b91ea",
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {
+        "workerSubType": [
+          "dcf0a31f3b411000ba18b737ca570000"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "stagiaire"
+      ],
+      "reference_total": 761
+    },
+    "bruce-power": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 19
+    },
+    "cae": {
+      "full_board": false,
+      "country": {
+        "Location_Country": [
+          "bc33aa3152ec42d4995f4791a106ed09",
+          "a30a87ed25634629aa6c3958aa2b91ea"
+        ]
+      },
+      "student": {
+        "jobFamilyGroup": [
+          "edbf90a9ab0f41e7aceb495d41f6584f"
+        ],
+        "workerSubType": [
+          "d02a37b9b80148a9ace8283774e84a4f",
+          "5abbc51b290349e49283fa379a8a6d88"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 241
+    },
+    "cenovus-energy": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 22
+    },
+    "dyson": {
+      "full_board": false,
+      "country": {},
+      "student": {
+        "workerSubType": [
+          "2dac528ca3c41001c98ee8b874260000",
+          "27857390d7b201d2a224582230010f02"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 411
+    },
+    "enbridge": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 61
+    },
+    "ge-vernova": {
+      "full_board": false,
+      "country": {},
+      "student": {
+        "workerSubType": [
+          "0235f30695e810014f5b8ff4a6f90000"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 2125
+    },
+    "kla": {
+      "full_board": false,
+      "country": {
+        "Country": [
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {
+        "jobFamilyGroup": [
+          "bcb876733f86019037b304ff551bb91e"
+        ],
+        "workerSubType": [
+          "bcb876733f86017814949a52051b230c"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "stagiaire"
+      ],
+      "reference_total": 472
+    },
+    "magna-international": {
+      "full_board": false,
+      "country": {
+        "Country": [
+          "bc33aa3152ec42d4995f4791a106ed09",
+          "a30a87ed25634629aa6c3958aa2b91ea"
+        ]
+      },
+      "student": {
+        "Worker_Type": [
+          "5aaaed564f4301b1fdb0b8f1c6025ed1",
+          "5aaaed564f43016878b0b7f1c60258d1"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 791
+    },
+    "medtronic": {
+      "full_board": false,
+      "country": {
+        "locationCountry": [
+          "a30a87ed25634629aa6c3958aa2b91ea",
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {
+        "jobFamilyGroup": [
+          "be3ab1d7a62801c1c7c82b804a0529d0"
+        ],
+        "workerSubType": [
+          "6726e368deda465eb362a1203261d1e5"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 265
+    },
+    "nvidia": {
+      "full_board": false,
+      "country": {
+        "locationHierarchy1": [
+          "2fcb99c455831013ea529c3b93ba3236",
+          "2fcb99c455831013ea52fb338f2932d8"
+        ]
+      },
+      "student": {
+        "workerSubType": [
+          "0c40f6bd1d8f10adf6dae42e46d44a17"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 1394
+    },
+    "rio-tinto": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 46
+    },
+    "rockwell-automation": {
+      "full_board": false,
+      "country": {
+        "locationCountry": [
+          "a30a87ed25634629aa6c3958aa2b91ea",
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 204
+    },
+    "shell": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 122
+    },
+    "stryker": {
+      "full_board": false,
+      "country": {
+        "Location_Country": [
+          "bc33aa3152ec42d4995f4791a106ed09",
+          "a30a87ed25634629aa6c3958aa2b91ea"
+        ]
+      },
+      "student": {
+        "workerSubType": [
+          "3156b848d19b01ca7b60bf0b1d12c30a"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 849
+    },
+    "tc-energy": {
+      "full_board": true,
+      "country": {},
+      "student": {},
+      "keywords": [
+        "internship",
+        "intern",
+        "co-op",
+        "coop",
+        "student",
+        "stagiaire",
+        "stage"
+      ],
+      "reference_total": 66
+    },
+    "thales-canada": {
+      "full_board": false,
+      "country": {
+        "locationCountry": [
+          "a30a87ed25634629aa6c3958aa2b91ea",
+          "bc33aa3152ec42d4995f4791a106ed09"
+        ]
+      },
+      "student": {
+        "workerSubType": [
+          "47200b8529d910215e133a260a722492",
+          "e4397306756401fb51ba61e65f3fb56f",
+          "47200b8529d910215e1341585a8c2495",
+          "1cb112d52e9c1000b743bea75fd40000",
+          "5af4f5cd8760013b5d0277b71a2b1b3a"
+        ]
+      },
+      "keywords": [
+        "internship",
+        "coop",
+        "student",
+        "stagiaire"
+      ],
+      "reference_total": 150
+    }
+  }
+}

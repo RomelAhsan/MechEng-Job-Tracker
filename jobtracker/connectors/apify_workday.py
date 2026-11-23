@@ -25,10 +25,18 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from jobtracker.connectors.base import Connector, RawJob
+from jobtracker.connectors.workday import (
+    WorkdayCoordinates,
+    parse_workday_url,
+    with_locale,
+)
+from jobtracker.connectors.workday import _coordinates as workday_coordinates
+from jobtracker.connectors.workday_targeting import TargetingPlan, public_search_urls
+from jobtracker.normalize.posting_date import parse_relative_posted
 from jobtracker.schemas.company import CompanyConfig
 from jobtracker.services.apify_budget import ApifyBudget
 from jobtracker.settings import Settings, get_settings
@@ -47,9 +55,26 @@ def _field(obj: object, *names: str) -> object:
 
 
 def with_locale_url(url: str) -> str:
-    from jobtracker.connectors.workday import with_locale
-
     return with_locale(url)
+
+
+#: Student keywords used for a board with no cached filters. "intern" and
+#: "co-op" are left out: Workday matches them against most of a board.
+_NO_PLAN_KEYWORDS = ("internship", "coop", "student", "stagiaire")
+
+
+def _parse_date(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+__all__ = ["ApifyWorkdayConnector", "WorkdayCoordinates", "with_locale_url"]
 
 
 class ApifyWorkdayConnector(Connector):
@@ -166,47 +191,50 @@ class ApifyWorkdayConnector(Connector):
 
         return [self._to_raw(item) for item in items if self._to_raw(item) is not None]
 
-    # --- async fallback for Workday boards that block datacenter IPs --------
-    def start_student_search(self, company: CompanyConfig) -> str | None:
-        """Start (without waiting) an Actor run over the board's student roles.
+    # --- fallback for Workday boards that refuse GitHub's servers ---------
+    #
+    # Workday answers GitHub's servers with "429 Too Many Requests" (a
+    # Cloudflare block). Apify's servers get through. One cheap LISTING run
+    # (no descriptions) covers every blocked board; a second DETAILS run then
+    # fetches only postings we have not stored yet. The listing doubles as the
+    # "still open?" check: a stored posting missing from it has closed.
 
-        Used when the direct Workday API answers 521 from the CI runner's IP.
-        The run only searches intern / co-op / student postings so it stays
-        small and cheap. Returns the run id, or ``None`` when skipped (no
-        token, budget used up, or this company ran recently).
-        """
-        from jobtracker.connectors.workday import with_locale
-
-        if not self.available or not company.careers_url:
-            return None
+    def can_start(self) -> bool:
+        """True when a token is set and today's free allowance allows a run."""
+        if not self.available:
+            return False
         decision = self._budget.check()
-        if decision.exhausted or decision.allowance_usd < float(
+        ok = not decision.exhausted and decision.allowance_usd >= float(
             self._settings.apify_min_allowance_usd
-        ):
+        )
+        if not ok:
             logger.info(
-                "Apify allowance $%.4f too low; not fetching %s this run.",
+                "Apify allowance $%.4f is below the minimum; Workday boards "
+                "that refuse GitHub stay unchecked this run.",
                 decision.allowance_usd,
-                company.id,
             )
-            return None
+        return ok
+
+    def due(self, company_id: str) -> bool:
+        """True when ``company_id`` was not fetched through Apify recently."""
         interval = float(self._settings.apify_fallback_interval_hours) * 3600
-        if not self._budget.due(company.id, interval):
-            logger.info("Apify fallback for %s ran recently; skipping.", company.id)
-            return None
+        return self._budget.due(company_id, interval)
+
+    def mark_fetched(self, company_ids: list[str]) -> None:
+        for company_id in company_ids:
+            self._budget.mark_run(company_id)
+
+    def _start(self, urls: list[str], *, details: bool) -> str | None:
         client = self._get_client()
-        if client is None:
+        if client is None or not urls:
             return None
-        base = with_locale(company.careers_url.rstrip("/"))
-        start_urls = [
-            {"url": f"{base}?q={term}"} for term in ("intern", "co-op", "student")
-        ]
         actor_id = self._settings.apify_workday_actor.replace("~", "/")
         try:
             run = client.actor(actor_id).start(  # type: ignore[attr-defined]
                 run_input={
-                    "startUrls": start_urls,
+                    "startUrls": [{"url": u} for u in urls],
                     "pagination": 0,
-                    "details": True,
+                    "details": details,
                     "proxyUrls": {"useApifyProxy": True},
                 },
                 max_total_charge_usd=(
@@ -214,27 +242,38 @@ class ApifyWorkdayConnector(Connector):
                     if self._settings.apify_max_run_charge_usd > 0
                     else None
                 ),
-                # Bounded run: the Actor is stopped by Apify itself after this,
-                # so a stuck run can never keep spending credit.
+                # Bounded run: Apify stops it itself, so a stuck run can never
+                # keep spending credit.
                 run_timeout=timedelta(
                     seconds=int(self._settings.apify_fallback_wait_secs) + 120
                 ),
                 memory_mbytes=1024,
             )
         except Exception as exc:  # noqa: BLE001 - fail-soft.
-            logger.warning("Could not start Apify run for %s: %s", company.id, exc)
+            logger.warning("Could not start Apify run: %s", exc)
             return None
         run_id = _field(run, "id")
-        if run_id:
-            self._budget.mark_run(company.id)
-            logger.info("Started Apify fallback run %s for %s.", run_id, company.id)
+        logger.info(
+            "Started Apify %s run %s over %d URLs.",
+            "details" if details else "listing",
+            run_id,
+            len(urls),
+        )
         return str(run_id) if run_id else None
 
-    def collect(self, run_id: str, *, wait_secs: int) -> list[RawJob] | None:
-        """Wait up to ``wait_secs`` for a started run and return its jobs.
+    def start_listing(self, urls: list[str]) -> str | None:
+        """Start a listing run (titles and paths only) over search URLs."""
+        return self._start(urls, details=False)
 
-        Returns ``None`` when the run did not succeed in time (it is aborted so
-        it stops using credit). Usage is recorded in the budget ledger.
+    def start_details(self, urls: list[str]) -> str | None:
+        """Start a run that fetches full details for specific job URLs."""
+        return self._start(urls, details=True)
+
+    def wait_items(self, run_id: str, *, wait_secs: int) -> list[dict] | None:
+        """Wait up to ``wait_secs`` for a run; return its items or ``None``.
+
+        An unfinished run is aborted so it stops using credit. Usage is always
+        recorded in the budget ledger.
         """
         client = self._get_client()
         if client is None:
@@ -254,10 +293,12 @@ class ApifyWorkdayConnector(Connector):
                 run = run_client.get()
             except Exception:  # noqa: BLE001
                 pass
-        charged = float(_field(run, "usage_total_usd", "usageTotalUsd") or 0.0) if run else 0.0
+        charged = (
+            float(_field(run, "usage_total_usd", "usageTotalUsd") or 0.0) if run else 0.0
+        )
         self._budget.record(charged)
         if status != "SUCCEEDED":
-            logger.info("Apify run %s ended as %s; no jobs used.", run_id, status)
+            logger.info("Apify run %s ended as %s; its results are not used.", run_id, status)
             return None
         dataset_id = _field(run, "default_dataset_id", "defaultDatasetId")
         if not dataset_id:
@@ -267,21 +308,79 @@ class ApifyWorkdayConnector(Connector):
         except Exception as exc:  # noqa: BLE001
             logger.warning("Apify dataset read failed for run %s: %s", run_id, exc)
             return None
-        jobs = [self._to_raw(item) for item in items]
-        found = [j for j in jobs if j is not None]
-        seen: set[str] = set()
-        unique: list[RawJob] = []
-        for job in found:
-            if job.source_job_id not in seen:
-                seen.add(job.source_job_id)
-                if job.application_url:
-                    job.application_url = with_locale_url(job.application_url)
-                    job.source_url = job.application_url
-                unique.append(job)
         logger.info(
-            "Apify run %s returned %d jobs (charged $%.4f).", run_id, len(unique), charged
+            "Apify run %s returned %d items (charged $%.4f).", run_id, len(items), charged
         )
-        return unique
+        return [i for i in items if isinstance(i, dict)]
+
+    @staticmethod
+    def search_urls(company: CompanyConfig, plan: TargetingPlan | None) -> list[str]:
+        """Public search URLs covering a board's student postings in Canada/US."""
+        coords = workday_coordinates(company)
+        if coords is None:
+            return []
+        if plan is None:
+            # No cached filters: precise student keywords only (no country
+            # filter is possible without the board's facet ids).
+            plan = TargetingPlan(full_board=False, keywords=list(_NO_PLAN_KEYWORDS))
+        return public_search_urls(coords.base, coords.site, plan)
+
+    @staticmethod
+    def board_key(url: str | None) -> tuple[str, str] | None:
+        """``(host, site)`` for a Workday job or search URL, to group items."""
+        if not url:
+            return None
+        coords = parse_workday_url(re.sub(r"/[a-z]{2}-[A-Z]{2}/", "/", url, count=1))
+        if coords is None:
+            return None
+        return coords.base.lower(), coords.site.lower()
+
+    @staticmethod
+    def item_path(item: dict) -> str | None:
+        """The ``/job/...`` path of a listing or detail item."""
+        path = item.get("externalPath")
+        if isinstance(path, str) and path.startswith("/job/"):
+            return path
+        for key in ("externalUrl", "url"):
+            url = item.get(key)
+            if isinstance(url, str) and "/job/" in url:
+                return url[url.index("/job/"):]
+        return None
+
+    @staticmethod
+    def detail_to_raw(item: dict) -> RawJob | None:
+        """Map a details-run item (Workday ``jobPostingInfo`` fields) to RawJob.
+
+        Mirrors the direct connector so the same posting gets the same
+        ``source_job_id`` whichever way it was fetched.
+        """
+        path = ApifyWorkdayConnector.item_path(item)
+        title = str(item.get("title") or "").strip()
+        if not path or not title:
+            return None
+        url = item.get("externalUrl") or item.get("url")
+        url = with_locale_url(re.sub(r"/wday/cxs/[^/]+/", "/", str(url))) if url else None
+        location = str(item.get("location") or item.get("locationsText") or "").strip()
+        country = item.get("country")
+        if isinstance(country, dict):
+            country = country.get("descriptor")
+        if isinstance(country, str) and country and country.lower() not in location.lower():
+            location = f"{location}, {country}" if location else country
+        posted = _parse_date(item.get("startDate")) or parse_relative_posted(
+            item.get("postedOn")
+        )
+        source_job_id = item.get("id") or item.get("jobReqId") or path
+        return RawJob(
+            source_job_id=str(source_job_id),
+            title=title,
+            location=location,
+            description_html=str(item.get("jobDescription") or ""),
+            application_url=url,
+            source_url=url,
+            posted_at=posted,
+            employment_type_hint=item.get("timeType"),
+            extra={"apify": True},
+        )
 
     @staticmethod
     def _to_raw(item: dict) -> RawJob | None:
