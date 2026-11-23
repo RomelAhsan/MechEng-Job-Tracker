@@ -1,10 +1,18 @@
 # Manual helper: find public Workday boards and check Workday job links from a
 # GitHub runner (some Workday data centers refuse the build sandbox). Writes
 # output/discovery.json as an artifact. Read-only: it changes nothing.
+#
+# mode=probe instead sends one small request to each kind of board to see
+# which ones answer GitHub's servers (writes output/runner_probe.json).
 name: Discover job boards
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "discover (find boards) or probe (check which boards answer GitHub)"
+        required: false
+        default: discover
 
 permissions:
   contents: read
@@ -19,16 +27,25 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install httpx "apify-client>=3"
-      - run: python scripts/discover_boards.py
+      - if: inputs.mode == 'probe'
+        run: python scripts/runner_probe.py
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      - if: inputs.mode != 'probe'
+        run: python scripts/discover_boards.py
       # Tiny Apify runs (~$0.001 each) to find the start-URL form the Workday
       # Actor accepts. Skipped when no APIFY_TOKEN secret is set.
-      - run: python scripts/apify_probe.py
+      - if: inputs.mode != 'probe'
+        run: python scripts/apify_probe.py
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         continue-on-error: true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: discovery
           path: |
             output/discovery.json
             output/apify_probe.json
+            output/runner_probe.json
+          if-no-files-found: ignore
