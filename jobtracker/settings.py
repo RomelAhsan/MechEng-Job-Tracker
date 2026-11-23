@@ -123,11 +123,14 @@ class Settings(BaseSettings):
     #: at most once per this many hours each. The daily free-credit allowance
     #: (see ``apify_monthly_budget_usd``) is the real ceiling: when it runs low
     #: the sweep is skipped until the allowance builds up again.
-    apify_fallback_interval_hours: float = 2.0
+    apify_fallback_interval_hours: float = 4.0
     #: Do not start an Apify run when today's rolled allowance is below this.
     apify_min_allowance_usd: float = 0.05
-    #: Total seconds the poll waits for all started Apify runs at the end.
+    #: Seconds the poll waits for the Apify listing run at the end.
     apify_fallback_wait_secs: int = 300
+    #: Seconds the poll waits for the Apify details run (new postings only;
+    #: ~600 postings took 4 minutes on the first sweep).
+    apify_details_wait_secs: int = 480
 
     #: Most NEW postings a connector downloads full details for in one run
     #: (stored postings are reused for free). A board seen for the first time

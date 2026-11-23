@@ -34,8 +34,16 @@ from jobtracker.schemas.job import JobStatus
 logger = logging.getLogger("jobtracker.services.link_check")
 
 #: A board read successfully within this window counts as having checked all
-#: of its postings.
+#: of its postings. Boards reached through Apify are swept every few hours,
+#: so the window is one hour longer than the sweep interval.
 RECENT = timedelta(hours=3)
+
+
+def recent_window() -> timedelta:
+    from jobtracker.settings import get_settings
+
+    sweep = float(get_settings().apify_fallback_interval_hours)
+    return max(RECENT, timedelta(hours=sweep + 1))
 
 OPEN = "open"
 CLOSED = "closed"
@@ -198,6 +206,7 @@ def run_link_checks(
 ) -> LinkCheckSummary:
     """Check ``job_ids`` (the jobs the website would show) and store results."""
     now = now or datetime.now(UTC)
+    window = recent_window()
     summary = LinkCheckSummary()
     health_by_company = {h.company_id: h for h in session.query(SourceHealth).all()}
     for job_id in job_ids:
@@ -212,7 +221,7 @@ def run_link_checks(
         last_ok = _aware(health.last_successful_check_at) if health else None
         # A successful read of the board (direct or through Apify) within
         # RECENT listed every posting it still had, so this one is open.
-        board_confirmed = last_ok is not None and now - last_ok <= RECENT
+        board_confirmed = last_ok is not None and now - last_ok <= window
 
         if board_confirmed:
             job.link_status = OPEN
