@@ -144,6 +144,24 @@ class RadancyConnector(Connector):
                 if url in seen:
                     continue
                 seen.add(url)
+                known = self.known_by_url.get(url)
+                if known is not None and known.description:
+                    # Still listed and already stored: reuse it rather than
+                    # downloading the job page again (2,300 page requests per
+                    # poll made L3Harris take ~19 minutes).
+                    raw_jobs.append(
+                        RawJob(
+                            source_job_id=known.source_job_id,
+                            title=title or known.title,
+                            location=known.location or location,
+                            description_html=known.description,
+                            application_url=known.application_url or url,
+                            source_url=known.application_url or url,
+                            posted_at=known.posted_at,
+                            extra={"_reused": True},
+                        )
+                    )
+                    continue
                 raw = self._detail(url, title, location)
                 if raw is not None:
                     raw_jobs.append(raw)

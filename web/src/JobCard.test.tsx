@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { JobCard } from "./JobCard";
 import type { Job } from "./types";
 
@@ -62,5 +62,48 @@ describe("JobCard posted-ago label", () => {
   it("shows no posted label when the age is unknown", () => {
     render(<JobCard job={job({ posted_days_ago: null })} />);
     expect(screen.queryByText(/Posted/)).not.toBeInTheDocument();
+  });
+});
+
+describe("JobCard date source and link checks", () => {
+  it("says 'First seen' when the employer gives no posting date", () => {
+    render(
+      <JobCard job={job({ posted_days_ago: 3, posted_date_source: "first_seen" })} />,
+    );
+    expect(screen.getByText("First seen 3 days ago")).toBeInTheDocument();
+    expect(screen.getByText(/employer gives no posting date/)).toBeInTheDocument();
+  });
+
+  it("labels the employer's own posting date", () => {
+    render(<JobCard job={job({ posted_days_ago: 9, posted_date_source: "employer" })} />);
+    expect(screen.getByText("Posted 9 days ago")).toBeInTheDocument();
+    expect(screen.getByText(/date from the employer's job board/)).toBeInTheDocument();
+  });
+
+  it("tags a posting whose job site refuses our checker, with the reason", () => {
+    render(
+      <JobCard
+        job={job({
+          link_status: "cant_check",
+          cant_check_reason: "the job site is refusing our checker (too many requests)",
+          link_checked_ago: "7 days ago",
+        })}
+      />,
+    );
+    expect(screen.getByText("Can't be checked")).toBeInTheDocument();
+    expect(screen.getByText(/The job site is refusing our checker/)).toBeInTheDocument();
+    expect(screen.getByText(/Last confirmed open 7 days ago/)).toBeInTheDocument();
+  });
+
+  it("shows when a posting was last confirmed open", () => {
+    render(<JobCard job={job({ link_status: "open", link_checked_ago: "8 minutes ago" })} />);
+    expect(screen.getByText(/Still open \(checked 8 minutes ago\)/)).toBeInTheDocument();
+  });
+
+  it("calls onReportDead from the Report dead link button", () => {
+    const onReportDead = vi.fn();
+    render(<JobCard job={job()} onReportDead={onReportDead} />);
+    fireEvent.click(screen.getByRole("button", { name: /Report dead link/ }));
+    expect(onReportDead).toHaveBeenCalledWith(expect.objectContaining({ job_id: "a" }));
   });
 });

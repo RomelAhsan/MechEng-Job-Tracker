@@ -351,6 +351,16 @@ def compute_stage1_eligibility(
 
     # (8) duration explicitly stated and outside the profile range. UNKNOWN passes.
     duration = getattr(job, "duration_months", None)
+    # A stated range ("3-6 months") passes when it overlaps the profile range.
+    range_match = re.match(
+        r"^(\d{1,2})-(\d{1,2}) months$", getattr(job, "duration_label", None) or ""
+    )
+    if duration is not None and range_match:
+        high = int(range_match.group(2))
+        minimum = profile.minimum_duration_months
+        maximum = profile.maximum_duration_months
+        if (minimum is None or high >= minimum) and (maximum is None or duration <= maximum):
+            duration = None  # the range includes an acceptable length
     if duration is not None:
         minimum = profile.minimum_duration_months
         maximum = profile.maximum_duration_months

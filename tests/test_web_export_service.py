@@ -51,6 +51,8 @@ def _dated_job(
     *,
     posted_at: datetime | None = None,
     first_seen_at: datetime | None = None,
+    term_season: str = "unknown",
+    term_start_date: datetime | None = None,
 ) -> None:
     session.add(
         Job(
@@ -59,7 +61,8 @@ def _dated_job(
             source_job_id=job_id,
             title="Mechanical Engineering Intern",
             location="Toronto, Ontario, Canada",
-            term_season="spring",
+            term_season=term_season,
+            term_start_date=term_start_date,
             duration_months=4,
             duration_label="4-month",
             fit_score=90,
@@ -347,3 +350,62 @@ def test_export_web_writes_empty_feed_without_crashing(session: Session, tmp_pat
     path = web_export_service.export_web(session, output=str(out))
     parsed = json.loads(path.read_text(encoding="utf-8"))
     assert parsed["jobs"] == []
+
+
+def test_upcoming_term_is_never_hidden_by_age(session: Session) -> None:
+    """Summer internships are posted months ahead; age alone must not hide them."""
+    _company(session)
+    now = datetime.now(UTC)
+    old = now - timedelta(days=60)
+    _dated_job(session, "summer-2027", posted_at=old, term_season="spring",
+               term_start_date=now + timedelta(days=150))
+    _dated_job(session, "no-year", posted_at=old, term_season="winter")
+    _dated_job(session, "started", posted_at=old, term_season="fall",
+               term_start_date=now - timedelta(days=30))
+    _dated_job(session, "no-term", posted_at=old)
+    session.flush()
+
+    ids = {j["job_id"] for j in web_export_service.build_feed(session).payload["jobs"]}
+    assert {"summer-2027", "no-year"} <= ids
+    assert "started" not in ids  # term already under way and posted 60 days ago
+    assert "no-term" not in ids  # no term stated: the 14-day rule applies
+
+
+def test_card_fields_for_date_source_and_link_check(session: Session) -> None:
+    _company(session)
+    now = datetime.now(UTC)
+    _dated_job(session, "dated", posted_at=now - timedelta(days=3))
+    _dated_job(session, "undated", first_seen_at=now - timedelta(days=2))
+    session.flush()
+    blocked = session.get(Job, "undated")
+    blocked.link_status = "cant_check"
+    blocked.link_check_reason = "the job site is refusing our checker"
+    blocked.link_checked_at = now - timedelta(days=5)
+    session.flush()
+
+    jobs = {j["job_id"]: j for j in web_export_service.build_feed(session).payload["jobs"]}
+    assert jobs["dated"]["posted_date_source"] == "employer"
+    assert jobs["undated"]["posted_date_source"] == "first_seen"
+    assert jobs["undated"]["link_status"] == "cant_check"  # tagged, not hidden
+    assert jobs["undated"]["cant_check_reason"] == "the job site is refusing our checker"
+    assert jobs["dated"]["cant_check_reason"] is None
+
+
+def test_reported_jobs_are_excluded(session: Session, tmp_path, monkeypatch) -> None:
+    import json as _json
+
+    _company(session)
+    _dated_job(session, "dead", first_seen_at=datetime.now(UTC))
+    _dated_job(session, "alive", first_seen_at=datetime.now(UTC))
+    session.flush()
+    reported = tmp_path / "reported.json"
+    reported.write_text(_json.dumps({"jobs": [{"job_id": "dead"}]}))
+    monkeypatch.setattr(web_export_service, "REPORTED_FILE", str(reported))
+    monkeypatch.setattr(
+        web_export_service, "load_reported",
+        lambda path=str(reported): {"dead": {"job_id": "dead"}},
+    )
+    feed = web_export_service.build_feed(session)
+    ids = {j["job_id"] for j in feed.payload["jobs"]}
+    assert ids == {"alive"}
+    assert [h["group"] for h in feed.hidden if h["job_id"] == "dead"] == ["reported"]

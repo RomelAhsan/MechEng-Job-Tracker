@@ -25,17 +25,19 @@ from datetime import datetime
 
 from jobtracker.connectors.base import Connector, RawJob
 from jobtracker.connectors.http import HttpClient
+from jobtracker.connectors.workday_targeting import (
+    MIN_STUDENT_SHARE,
+    Query,
+    TargetingPlan,
+    build_plan,
+    student_share,
+)
 from jobtracker.normalize.posting_date import parse_relative_posted
 from jobtracker.schemas.company import CompanyConfig
 
 logger = logging.getLogger("jobtracker.connectors.workday")
 
 _PAGE_LIMIT = 20
-#: Boards bigger than this are searched by student keywords instead of listed
-#: in full (see ``_fetch_all_postings``).
-_LARGE_BOARD = 300
-#: Workday keyword queries that surface student roles (English + French).
-_STUDENT_SEARCH_TERMS = ("intern", "co-op", "coop", "student", "stagiaire")
 #: Hard ceiling on postings read from one query (Workday caps offsets ~2000).
 _MAX_POSTINGS = 2000
 
@@ -129,6 +131,8 @@ class WorkdayConnector(Connector):
 
     def __init__(self, http: HttpClient) -> None:
         self.http = http
+        #: The targeting plan used by the last fetch (None before any fetch).
+        self.last_plan: TargetingPlan | None = None
 
     def fetch(self, company: CompanyConfig) -> list[RawJob]:
         coords = _coordinates(company)
@@ -149,35 +153,47 @@ class WorkdayConnector(Connector):
         return raw_jobs
 
     def _fetch_all_postings(self, coords: WorkdayCoordinates) -> list[dict]:
-        """List postings; switch to student-keyword search on very large boards.
+        """List the board's student postings in Canada/US (or the whole board).
 
-        A global board (Thales, Airbus, GE Vernova: 2,000+ postings) would need
-        one detail request per posting every poll, which is slow and almost
-        entirely full-time roles the profile can never take. Above
-        ``_LARGE_BOARD`` postings we instead run Workday's own keyword search
-        for student terms and union the results, so only plausibly-student
-        postings are fetched. Smaller boards are listed in full.
+        See :mod:`jobtracker.connectors.workday_targeting`: small boards are
+        listed in full; larger ones are searched with the board's own student
+        worker-type filter plus precise keywords, both restricted to Canada and
+        the US. Results are unioned by ``externalPath``. The plan used is kept
+        on ``self.last_plan`` so callers can cache it.
         """
-        first = self._search(coords, "", offset=0)
-        total = first.get("total") if isinstance(first, dict) else None
-        if isinstance(total, int) and total > _LARGE_BOARD:
-            seen: dict[str, dict] = {}
-            for term in _STUDENT_SEARCH_TERMS:
-                for posting in self._search_all(coords, term):
-                    seen.setdefault(posting.get("externalPath", ""), posting)
-            return [p for key, p in seen.items() if key]
-        return self._search_all(coords, "", first_page=first)
+        first = self._search(coords, Query({}, ""), offset=0)
+        plan = build_plan(first)
+        self.last_plan = plan
+        if plan.full_board:
+            return self._search_all(coords, Query({}, ""), first_page=first)
 
-    def _search(self, coords: WorkdayCoordinates, text: str, *, offset: int) -> dict:
+        seen: dict[str, dict] = {}
+        for query in plan.queries():
+            page = self._search(coords, query, offset=0)
+            total = page.get("total")
+            titles = [str(p.get("title") or "") for p in page.get("jobPostings") or []]
+            if query.search_text and plan.skip_keyword(total, titles):
+                logger.info(
+                    "Workday %s: keyword %r returns %s mostly non-student postings; "
+                    "skipped.",
+                    coords.tenant,
+                    query.search_text,
+                    total,
+                )
+                continue
+            for posting in self._search_all(
+                coords, query, first_page=page, stop_when_not_student=bool(query.search_text)
+            ):
+                path = posting.get("externalPath")
+                if path:
+                    seen.setdefault(path, posting)
+        return list(seen.values())
+
+    def _search(self, coords: WorkdayCoordinates, query: Query, *, offset: int) -> dict:
         response = self.http.request(
             "POST",
             f"{coords.cxs_base}/jobs",
-            json_body={
-                "limit": _PAGE_LIMIT,
-                "offset": offset,
-                "appliedFacets": {},
-                "searchText": text,
-            },
+            json_body=query.body(limit=_PAGE_LIMIT, offset=offset),
         )
         # CORE RULE #1: a 401/403 (auth wall) must surface, not be worked
         # around, so the company stays a fallback stub. 404 = wrong site.
@@ -186,18 +202,38 @@ class WorkdayConnector(Connector):
         return payload if isinstance(payload, dict) else {}
 
     def _search_all(
-        self, coords: WorkdayCoordinates, text: str, *, first_page: dict | None = None
+        self,
+        coords: WorkdayCoordinates,
+        query: Query,
+        *,
+        first_page: dict | None = None,
+        stop_when_not_student: bool = False,
     ) -> list[dict]:
+        """Page through one search.
+
+        ``stop_when_not_student`` (keyword searches): Workday ranks the best
+        matches first, so paging stops once a page is mostly non-student roles.
+        """
         postings: list[dict] = []
         offset = 0
         payload = first_page if first_page is not None else self._search(
-            coords, text, offset=0
+            coords, query, offset=0
         )
+        # Workday reports the result count only on the FIRST page; later pages
+        # say "total": 0. Reading the total from every page stopped each search
+        # after 40 postings, so larger searches silently lost the rest.
+        total = payload.get("total")
         while True:
             page = payload.get("jobPostings") or []
             postings.extend(p for p in page if isinstance(p, dict))
-            total = payload.get("total")
             offset += len(page)
+            titles = [str(p.get("title") or "") for p in page if isinstance(p, dict)]
+            if (
+                stop_when_not_student
+                and offset > _PAGE_LIMIT
+                and student_share(titles) < MIN_STUDENT_SHARE
+            ):
+                break
             if (
                 not page
                 or not isinstance(total, int)
@@ -205,7 +241,7 @@ class WorkdayConnector(Connector):
                 or offset >= _MAX_POSTINGS
             ):
                 break
-            payload = self._search(coords, text, offset=offset)
+            payload = self._search(coords, query, offset=offset)
         return postings
 
     def _to_raw(

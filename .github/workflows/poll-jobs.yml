@@ -3,9 +3,13 @@
 # Runs on GitHub's servers, so jobs keep updating with nothing running on your
 # own computer. Email sending is turned OFF (see the notify step below).
 #
-# Cadence: every 15 minutes. The repository is PUBLIC, so GitHub Actions
-# minutes are unlimited. The concurrency guard below ensures runs never
-# overlap even if one takes longer than 15 minutes.
+# Cadence: about every 10 minutes. GitHub's scheduler delays and drops
+# frequent cron runs (in practice it fired only every 4-9 hours), so each run
+# starts the next one itself ("self-chaining"): the last step dispatches a new
+# run that waits until 10 minutes after this one started. The 15-minute cron
+# stays as a backup that restarts the chain if it ever breaks. The repository
+# is PUBLIC, so GitHub Actions minutes are unlimited. The concurrency guard
+# below ensures runs never overlap (extra queued runs simply collapse).
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   NOTIFY_EMAIL     your Gmail address (where job alerts are sent)
@@ -23,8 +27,14 @@ on:
   schedule:
     # Every 15 minutes (UTC).
     - cron: "*/15 * * * *"
-  # Adds a "Run workflow" button so you can trigger a poll on demand.
+  # Adds a "Run workflow" button so you can trigger a poll on demand. The
+  # self-chaining step also uses it, passing the earliest start time.
   workflow_dispatch:
+    inputs:
+      not_before:
+        description: "Unix time before which this run waits (set by the previous run)"
+        required: false
+        default: ""
 
 # Never let two polls overlap: they would fight over the same database.
 concurrency:
@@ -33,6 +43,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Lets the last step dispatch the next run (self-chaining).
+  actions: write
 
 jobs:
   poll:
@@ -65,6 +77,20 @@ jobs:
       JOBTRACKER_USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
 
     steps:
+      # A chained run waits until 10 minutes after the previous run started,
+      # so checks run about every 10 minutes rather than back to back.
+      - name: Wait for this run's slot
+        env:
+          NOT_BEFORE: ${{ inputs.not_before }}
+        run: |
+          echo "RUN_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+          if [ -n "$NOT_BEFORE" ] && [ "$NOT_BEFORE" -eq "$NOT_BEFORE" ] 2>/dev/null; then
+            WAIT=$(( NOT_BEFORE - $(date +%s) ))
+            if [ "$WAIT" -gt 900 ]; then WAIT=900; fi
+            if [ "$WAIT" -gt 0 ]; then echo "Waiting ${WAIT}s"; sleep "$WAIT"; fi
+          fi
+          echo "RUN_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Check out the repository
         uses: actions/checkout@v4
 
@@ -158,6 +184,22 @@ jobs:
         continue-on-error: true
         run: python -m jobtracker screen-ai --only-missing --limit 150
 
+      # AI spot-check of a few jobs the RULES hid (at most every 2 hours, one
+      # AI request). It never changes what is shown; it flags possible rule
+      # mistakes in the website's "Hidden jobs" tab.
+      - name: AI spot-check of hidden jobs (optional)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: python -m jobtracker audit-rejections --limit 12 --min-interval-hours 2
+
+      # Every job the website shows: confirm it is still open. Closed postings
+      # are removed; postings whose job site refuses our checker are kept and
+      # tagged "can't be checked" with the reason.
+      - name: Check that shown jobs are still open
+        timeout-minutes: 10
+        continue-on-error: true
+        run: python -m jobtracker check-links
+
       # EMAILING IS DISABLED (turned off at the user's request). The collector
       # still polls, screens, and publishes the site every run -- it just does
       # not send any email. To re-enable, uncomment the step below; it only
@@ -209,6 +251,24 @@ jobs:
         with:
           path: state/
           key: jobtracker-state-${{ github.run_id }}
+
+      # Self-chaining: start the next run now; it waits until 10 minutes after
+      # this run started. Only on main, so test runs on branches never chain.
+      - name: Start the next check
+        if: always() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEXT=$(( RUN_STARTED_AT + 600 ))
+          for attempt in 1 2 3; do
+            if gh api "repos/${{ github.repository }}/actions/workflows/poll-jobs.yml/dispatches" \
+                -f ref=main -f "inputs[not_before]=${NEXT}"; then
+              echo "Next check scheduled for $(date -u -d "@${NEXT}" +%H:%M) UTC."
+              exit 0
+            fi
+            sleep $(( attempt * 10 ))
+          done
+          echo "::warning::Could not start the next check; the 15-minute schedule will restart it."
 
       # Download this from the run page to read your jobs without any hosting.
       # In outbox mode the rendered emails show up here too.

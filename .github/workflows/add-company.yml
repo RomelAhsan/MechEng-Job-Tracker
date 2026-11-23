@@ -116,9 +116,12 @@ jobs:
         # committed before the poll, so this step cannot lose the add even if it
         # hits the limit. Keeps a single huge board from holding the whole job.
         timeout-minutes: 15
+        # The input is passed as an environment variable (never pasted into
+        # the script) so a crafted company name cannot run commands.
+        env:
+          COMPANY: ${{ github.event.inputs.company }}
         run: |
           set -euo pipefail
-          COMPANY="${{ github.event.inputs.company }}"
           if printf '%s' "$COMPANY" | grep -Eq '://|\.'; then
             echo "Treating input as a careers URL."
             python -m jobtracker add-company "$COMPANY" --poll | tee add.log

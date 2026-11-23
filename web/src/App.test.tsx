@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { Feed } from "./types";
@@ -91,15 +91,38 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists the actively-tracked companies from the feed", async () => {
-    mockFetch(feed());
+  it("lists tracked companies and their check status in the Coverage tab", async () => {
+    mockFetch(
+      feed({
+        coverage: [
+          {
+            id: "acme", name: "Acme Robotics", ats: "greenhouse", status: "ok",
+            last_success_at: null, last_success_ago: "5 minutes ago", failing_since: null,
+            error: null, via: "direct", postings: 2, shown: 1, hidden: 1,
+            hidden_reasons: {}, careers_url: null,
+          },
+        ],
+      }),
+    );
     render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Coverage" }));
     expect(
-      await screen.findByRole("heading", { name: /Companies we're tracking/i }),
+      screen.getByRole("heading", { name: /Companies we're tracking/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("Acme Robotics")).toBeInTheDocument();
-    expect(screen.getByText("greenhouse")).toBeInTheDocument();
-    expect(screen.getByText("2 jobs")).toBeInTheDocument();
+    expect(screen.getByText(/2 postings tracked · 1 shown · 1 hidden/)).toBeInTheDocument();
+  });
+
+  it("shows a warning banner when boards could not be checked", async () => {
+    mockFetch(
+      feed({
+        warnings: [
+          { kind: "boards_failing", count: 19, message: "19 companies could not be checked on the last run" },
+        ],
+      }),
+    );
+    render(<App />);
+    expect(await screen.findByText(/19 companies could not be checked/)).toBeInTheDocument();
   });
 
   it("shows an empty-state when there are no eligible jobs", async () => {

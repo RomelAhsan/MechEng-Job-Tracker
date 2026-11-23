@@ -7,10 +7,12 @@
 // in the GitHub Authorization header and is never written to any committed file.
 
 const REPO = "RomelAhsan/MechEng-Job-Tracker";
-const DISPATCH_URL = `https://api.github.com/repos/${REPO}/actions/workflows/add-company.yml/dispatches`;
+const dispatchUrl = (workflow: string) =>
+  `https://api.github.com/repos/${REPO}/actions/workflows/${workflow}/dispatches`;
 
 export const TOKEN_KEY = "gh_token";
 export const ADDED_COMPANIES_KEY = "added_companies";
+export const REPORTED_JOBS_KEY = "reported_jobs";
 
 /** Read the stored fine-grained GitHub token (localStorage only). */
 export function getToken(): string {
@@ -82,7 +84,16 @@ export async function dispatchAddCompany(
   company: string,
   token: string,
 ): Promise<void> {
-  const res = await fetch(DISPATCH_URL, {
+  await dispatchWorkflow("add-company.yml", { company }, token);
+}
+
+/** Trigger a workflow_dispatch run of `workflow` with string `inputs`. */
+async function dispatchWorkflow(
+  workflow: string,
+  inputs: Record<string, string>,
+  token: string,
+): Promise<void> {
+  const res = await fetch(dispatchUrl(workflow), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -90,9 +101,60 @@ export async function dispatchAddCompany(
       "X-GitHub-Api-Version": "2022-11-28",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ ref: "main", inputs: { company } }),
+    body: JSON.stringify({ ref: "main", inputs }),
   });
   // A successful workflow dispatch returns 204 No Content.
   if (res.status === 204 || res.ok) return;
   throw new Error(errorForStatus(res.status));
+}
+
+/**
+ * Report a job's link as dead ("hide") or undo that ("restore"). The
+ * report-job.yml workflow records it in config/reported_jobs.json and the site
+ * redeploys without the job.
+ */
+export async function dispatchReportJob(
+  job: { job_id: string; title: string; company: string },
+  action: "hide" | "restore",
+  token: string,
+): Promise<void> {
+  await dispatchWorkflow(
+    "report-job.yml",
+    {
+      job_id: job.job_id,
+      action,
+      title: job.title.slice(0, 200),
+      company: job.company.slice(0, 120),
+    },
+    token,
+  );
+}
+
+/** Job ids reported as dead in this browser (hidden right away, before the
+ * site redeploys). */
+export function getReportedIds(): string[] {
+  try {
+    const raw = localStorage.getItem(REPORTED_JOBS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveReportedIds(ids: string[]): string[] {
+  try {
+    localStorage.setItem(REPORTED_JOBS_KEY, JSON.stringify(ids));
+  } catch {
+    /* ignore */
+  }
+  return ids;
+}
+
+export function addReportedId(jobId: string): string[] {
+  return saveReportedIds([jobId, ...getReportedIds().filter((id) => id !== jobId)]);
+}
+
+export function removeReportedId(jobId: string): string[] {
+  return saveReportedIds(getReportedIds().filter((id) => id !== jobId));
 }

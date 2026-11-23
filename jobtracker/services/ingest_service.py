@@ -11,14 +11,16 @@ source failing never aborts the whole run; every failure is recorded against
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy.orm import Session
 
 from jobtracker.connectors.base import KnownJob, RawJob
 from jobtracker.connectors.fallback import REQUIRES_FALLBACK, FallbackConnector
-from jobtracker.connectors.http import HttpClient
+from jobtracker.connectors.http import BlockedError, HttpClient
 from jobtracker.connectors.registry import get_connector
 from jobtracker.db.models import Company, Job, QuarantineItem, SourceHealth
 from jobtracker.db.repositories import CompanyRepository
@@ -120,16 +122,28 @@ def _config_from_company(company: Company) -> CompanyConfig:
 
 def _known_jobs(session: Session, company_id: str) -> dict[str, KnownJob]:
     """Active stored postings keyed by the '/job/...' path of their apply link."""
-    known: dict[str, KnownJob] = {}
+    return _known_maps(session, company_id)[0]
+
+
+def _known_maps(
+    session: Session, company_id: str
+) -> tuple[dict[str, KnownJob], dict[str, KnownJob], dict[str, KnownJob]]:
+    """Active stored postings with a description, keyed three ways.
+
+    Returns ``(by '/job/...' path, by source_job_id, by apply URL)``. Removed
+    postings are included too (by id/URL) so a posting that comes back after
+    a missed check is not re-downloaded.
+    """
+    by_path: dict[str, KnownJob] = {}
+    by_id: dict[str, KnownJob] = {}
+    by_url: dict[str, KnownJob] = {}
     rows = session.query(Job).filter(
-        Job.company_id == company_id, Job.status == "active"
+        Job.company_id == company_id, Job.status.in_(("active", "removed"))
     )
     for job in rows:
-        url = job.application_url or ""
-        idx = url.find("/job/")
-        if idx < 0 or not job.description:
+        if not job.description:
             continue
-        known[url[idx:]] = KnownJob(
+        known = KnownJob(
             source_job_id=job.source_job_id or "",
             title=job.title or "",
             location=job.location or "",
@@ -137,7 +151,15 @@ def _known_jobs(session: Session, company_id: str) -> dict[str, KnownJob]:
             application_url=job.application_url,
             posted_at=job.posted_at,
         )
-    return known
+        if job.source_job_id:
+            by_id.setdefault(job.source_job_id, known)
+        url = job.application_url or ""
+        if url:
+            by_url.setdefault(url, known)
+        idx = url.find("/job/")
+        if idx >= 0 and job.status == "active":
+            by_path[url[idx:]] = known
+    return by_path, by_id, by_url
 
 
 def quarantine_raw(
@@ -155,6 +177,54 @@ def quarantine_raw(
     )
 
 
+def describe_error(exc: BaseException) -> str:
+    """A short, plain-English reason a board could not be checked."""
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, str) and reason:
+        return reason
+    if isinstance(exc, EmptyBoardError):
+        return str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 404:
+            return "the job board address no longer works (HTTP 404)"
+        if status in (401, 403):
+            return f"the job site refused access (HTTP {status})"
+        if status == 429:
+            return "the job site is refusing our checker (too many requests)"
+        if status >= 500:
+            return f"the job site had a server error (HTTP {status})"
+        return f"the job site answered HTTP {status}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "the job site did not answer in time"
+    if isinstance(exc, httpx.TransportError):
+        return "could not connect to the job site"
+    return f"the board could not be read ({type(exc).__name__})"
+
+
+def plain_reason(text: str | None) -> str | None:
+    """Turn a stored error into plain English (older rows hold raw repr text)."""
+    if not text:
+        return None
+    if "Error(" not in text and "error '" not in text.lower():
+        return text
+    match = re.search(r"\b(\d{3})\b", text)
+    status = int(match.group(1)) if match else None
+    if status == 429:
+        return "the job site is refusing our checker (too many requests from GitHub's servers)"
+    if status and status >= 520:
+        return "the job site's network is refusing connections from GitHub's servers"
+    if status in (401, 403):
+        return "the job site's bot protection is blocking our checker"
+    if status == 404:
+        return "the job board address no longer works (HTTP 404)"
+    if status:
+        return f"the job site answered HTTP {status}"
+    if "Timeout" in text:
+        return "the job site did not answer in time"
+    return "the board could not be read"
+
+
 def _record_error(session: Session, company_id: str, message: str) -> None:
     health = session.get(SourceHealth, company_id)
     if health is None:
@@ -165,6 +235,9 @@ def _record_error(session: Session, company_id: str, message: str) -> None:
     health.error_count = (health.error_count or 0) + 1
     health.last_error = message
     health.last_status = "error"
+    health.consecutive_failures = (health.consecutive_failures or 0) + 1
+    if health.failing_since is None:
+        health.failing_since = now
 
 
 def _record_fallback(session: Session, company_id: str) -> None:
@@ -190,7 +263,11 @@ def _ingest_company(
 ) -> CompanyRunResult:
     config = _config_from_company(company)
     connector = get_connector(company.ats, http)
-    connector.known_jobs = _known_jobs(session, company.id)
+    (
+        connector.known_jobs,
+        connector.known_by_id,
+        connector.known_by_url,
+    ) = _known_maps(session, company.id)
     # Only the one-time add-time poll passes a cap; the scheduled poll leaves it
     # None so the connector fetches the full board.
     if max_postings is not None:
@@ -206,10 +283,39 @@ def _ingest_company(
     return _process_raw_jobs(session, company, config, raw_jobs)
 
 
+class EmptyBoardError(RuntimeError):
+    """A board that had postings suddenly returned none (likely a site change).
+
+    Treated as a failed check: the stored postings are kept (and tagged
+    "can't be checked") instead of all being marked removed.
+    """
+
+
+#: A board returning no postings while we still hold at least this many active
+#: ones is treated as a failed check, not as "every posting closed".
+EMPTY_BOARD_MIN_ACTIVE = 5
+
+
 def _process_raw_jobs(
-    session: Session, company: Company, config, raw_jobs: list
+    session: Session,
+    company: Company,
+    config,
+    raw_jobs: list,
+    *,
+    via: str = "direct",
 ) -> CompanyRunResult:
     """Normalize, diff, and screen one company's fetched postings."""
+    if not raw_jobs:
+        active = (
+            session.query(Job)
+            .filter(Job.company_id == company.id, Job.status == "active")
+            .count()
+        )
+        if active >= EMPTY_BOARD_MIN_ACTIVE:
+            raise EmptyBoardError(
+                f"the board returned no postings although {active} were listed "
+                "before; keeping them until it answers normally"
+            )
     canonical: list[CanonicalJob] = []
     quarantined = 0
     for raw in raw_jobs:
@@ -220,6 +326,9 @@ def _process_raw_jobs(
             quarantined += 1
 
     detection = detect_changes(session, company.id, canonical)
+    health = session.get(SourceHealth, company.id)
+    if health is not None:
+        health.last_fetch_via = via
     session.flush()
 
     # Screen ONLY this company's new/changed jobs. (Passing None here used to
@@ -243,17 +352,37 @@ def _process_raw_jobs(
 
 
 def _is_blocked_error(exc: Exception) -> bool:
+    """True when a board refused GitHub's servers (bot protection/throttling)."""
+    if isinstance(exc, BlockedError):
+        return True
+    return _is_legacy_blocked(exc)
+
+
+def _is_legacy_blocked(exc: Exception) -> bool:
     """True for the Cloudflare 521 Workday returns to blocked datacenter IPs."""
     response = getattr(exc, "response", None)
     return getattr(response, "status_code", None) == 521
 
 
 class _WorkdayFallback:
-    """Start Apify runs for blocked Workday boards and collect them at the end."""
+    """Check Workday boards that refuse GitHub's servers through Apify.
+
+    Boards that answered with a block are collected while the Workday boards
+    are polled. :meth:`start` then launches ONE Apify listing run over all of
+    them that are due (student roles in Canada/US only, using the cached
+    filters in ``config/workday_filters.json``). :meth:`collect` waits for it
+    at the end of the poll, fetches full details only for postings we have
+    not stored yet (a second small run), and yields each board's postings so
+    they are reconciled like a normal fetch: new postings are added and
+    stored postings missing from the listing are marked closed.
+    """
 
     def __init__(self) -> None:
-        self._pending: list[tuple[Company, str]] = []
+        self._blocked: list[Company] = []
+        self._included: list[Company] = []
+        self._listing_run: str | None = None
         self._connector = None
+        self._plans: dict | None = None
 
     def _get(self):
         if self._connector is None:
@@ -262,33 +391,127 @@ class _WorkdayFallback:
             self._connector = ApifyWorkdayConnector()
         return self._connector
 
-    def try_start(self, company: Company, exc: Exception) -> bool:
+    def note_blocked(self, company: Company, exc: Exception) -> bool:
+        """Remember a Workday board that refused us; True if it qualifies."""
         if getattr(company, "ats", None) != "workday" or not _is_blocked_error(exc):
             return False
-        try:
-            connector = self._get()
-            if not connector.available:
-                return False
-            run_id = connector.start_student_search(_config_from_company(company))
-        except Exception:  # noqa: BLE001
-            logger.exception("Apify fallback start failed for %s", company.id)
-            return False
-        if run_id:
-            self._pending.append((company, run_id))
+        self._blocked.append(company)
         return True
 
-    def collect_all(self):
-        if not self._pending:
+    # Kept for callers/tests that used the old one-run-per-board API.
+    def try_start(self, company: Company, exc: Exception) -> bool:
+        return self.note_blocked(company, exc)
+
+    def start(self) -> None:
+        """Start one listing run over every blocked board that is due."""
+        if not self._blocked:
+            return
+        try:
+            connector = self._get()
+            if not connector.can_start():
+                return
+            if self._plans is None:
+                from jobtracker.connectors.workday_targeting import load_plans
+
+                self._plans = load_plans()
+            due = [c for c in self._blocked if connector.due(c.id)]
+            urls: list[str] = []
+            for company in due:
+                urls.extend(
+                    connector.search_urls(
+                        _config_from_company(company), self._plans.get(company.id)
+                    )
+                )
+            if not urls:
+                return
+            run_id = connector.start_listing(urls)
+        except Exception:  # noqa: BLE001 - the fallback must never break a poll.
+            logger.exception("Could not start the Apify Workday sweep")
+            return
+        if run_id:
+            self._listing_run = run_id
+            self._included = due
+
+    def collect(self, session: Session):
+        """Yield ``(company, raw_jobs)`` for each board the sweep covered."""
+        if not self._listing_run:
             return
         import time
 
+        from jobtracker.connectors.workday import _coordinates
+
         settings = get_settings()
+        connector = self._get()
         deadline = time.monotonic() + int(settings.apify_fallback_wait_secs)
-        for company, run_id in self._pending:
-            remaining = max(1, int(deadline - time.monotonic()))
-            raw_jobs = self._get().collect(run_id, wait_secs=remaining)
-            if raw_jobs:
-                yield company, raw_jobs
+        items = connector.wait_items(
+            self._listing_run, wait_secs=max(1, int(deadline - time.monotonic()))
+        )
+        if items is None:
+            return
+
+        by_board: dict[tuple[str, str], dict[str, dict]] = {}
+        for item in items:
+            key = connector.board_key(item.get("url") or item.get("externalUrl"))
+            meta = item.get("__metadata")
+            if key is None and isinstance(meta, dict):
+                key = connector.board_key(meta.get("sourceUrl"))
+            path = connector.item_path(item)
+            if key and path:
+                by_board.setdefault(key, {}).setdefault(path, item)
+
+        pending: list[tuple[Company, list[RawJob], list[str]]] = []
+        detail_urls: list[str] = []
+        for company in self._included:
+            coords = _coordinates(_config_from_company(company))
+            if coords is None:
+                continue
+            listing = by_board.get((coords.base.lower(), coords.site.lower()), {})
+            by_path, _by_id, _by_url = _known_maps(session, company.id)
+            raws: list[RawJob] = []
+            missing: list[str] = []
+            for path, item in listing.items():
+                known = by_path.get(path)
+                if known is not None:
+                    raws.append(
+                        RawJob(
+                            source_job_id=known.source_job_id,
+                            title=str(item.get("title") or known.title),
+                            location=known.location,
+                            description_html=known.description,
+                            application_url=known.application_url,
+                            source_url=known.application_url,
+                            posted_at=known.posted_at,
+                            extra={"_reused": True, "apify": True},
+                        )
+                    )
+                else:
+                    missing.append(coords.public_url(path))
+            pending.append((company, raws, missing))
+            detail_urls.extend(missing)
+
+        details: dict[str, RawJob] = {}
+        if detail_urls:
+            run_id = connector.start_details(detail_urls)
+            remaining = max(30, int(deadline - time.monotonic()))
+            for item in (connector.wait_items(run_id, wait_secs=remaining) or []) if run_id else []:
+                raw = connector.detail_to_raw(item)
+                path = connector.item_path(item)
+                if raw is not None and path:
+                    details[path] = raw
+
+        connector.mark_fetched([c.id for c, _r, _m in pending])
+        for company, raws, missing in pending:
+            for url in missing:
+                path = url[url.index("/job/"):]
+                if path in details:
+                    raws.append(details[path])
+            logger.info(
+                "Apify sweep: %s has %d student postings in Canada/US (%d new).",
+                company.id,
+                len(raws),
+                sum(1 for u in missing if u[u.index("/job/"):] in details),
+            )
+            yield company, raws
 
 
 def run(
@@ -322,11 +545,13 @@ def run(
         companies = _cap_apify_companies(session, companies)
 
     summary = RunSummary()
-    # Workday first, so any Apify fallback runs started for blocked boards get
-    # the rest of the poll to finish in the background.
-    companies = sorted(companies, key=lambda c: getattr(c, "ats", "") != "workday")
+    # Workday first: boards that refuse GitHub's servers are then fetched in
+    # ONE Apify sweep that runs while the other boards are polled.
+    workday = [c for c in companies if getattr(c, "ats", "") == "workday"]
+    others = [c for c in companies if getattr(c, "ats", "") != "workday"]
     fallback = _WorkdayFallback()
-    for company in companies:
+
+    def _poll(company: Company) -> None:
         try:
             result = _ingest_company(
                 session, company, http, max_postings=max_postings_per_company
@@ -334,33 +559,34 @@ def run(
             session.commit()
         except Exception as exc:  # noqa: BLE001 - fail-soft: isolate per company.
             session.rollback()
-            if fallback.try_start(company, exc):
-                logger.warning(
-                    "Workday blocked this runner for %s (%s); fetching via Apify.",
-                    company.id,
-                    exc,
-                )
+            reason = describe_error(exc)
+            if fallback.note_blocked(company, exc):
+                logger.warning("Workday refused GitHub for %s: %s", company.id, reason)
             else:
                 logger.exception("Ingestion failed for company %s", company.id)
-            _record_error(session, company.id, repr(exc))
+            _record_error(session, company.id, reason)
             session.commit()
-            result = CompanyRunResult(
-                company_id=company.id, status="error", error=repr(exc)
-            )
+            result = CompanyRunResult(company_id=company.id, status="error", error=reason)
         summary.companies.append(result)
 
-    for company, raw_jobs in fallback.collect_all():
+    for company in workday:
+        _poll(company)
+    fallback.start()
+    for company in others:
+        _poll(company)
+
+    for company, raw_jobs in fallback.collect(session):
         try:
             result = _process_raw_jobs(
-                session, company, _config_from_company(company), raw_jobs
+                session, company, _config_from_company(company), raw_jobs, via="apify"
             )
             session.commit()
             summary.companies = [
                 r for r in summary.companies if r.company_id != company.id
             ] + [result]
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             session.rollback()
-            logger.exception("Apify fallback ingest failed for %s", company.id)
+            logger.warning("Apify sweep result for %s not used: %s", company.id, exc)
 
     logger.info(
         "Ingestion run complete: %d companies, %d new, %d changed, %d errors",

@@ -208,35 +208,102 @@ body {
 .added-list h3 { margin: 0 0 0.35rem; font-size: 0.95rem; }
 .added-list ul { margin: 0; padding-left: 1.1rem; font-size: 0.9rem; }
 
-/* Tracked-companies panel (read-only list from the static feed). */
-.tracked-companies {
+/* Tags used on cards and in the coverage list. */
+.tag {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.tag-warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.tag-flag { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+
+.link-status { margin: 0; font-size: 0.76rem; }
+.link-open { color: var(--new); }
+.link-cant { color: #92400e; }
+.date-source { color: var(--muted); }
+
+.report-dead,
+.link-button {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+}
+.report-dead { align-self: flex-start; }
+.report-dead:hover { color: #b91c1c; border-color: #b91c1c; }
+.link-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.notice,
+.warning-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+}
+.notice { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+.warning-banner { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+
+.countdown-stale { border-color: #fcd34d; }
+
+/* Coverage tab. */
+.coverage,
+.hidden-jobs {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 1.1rem 1.25rem;
-  margin: 1rem 0;
+  margin-bottom: 1rem;
 }
-.tracked-companies h2 { margin: 0 0 0.6rem; font-size: 1.25rem; }
-.tracked-companies .muted { color: var(--muted); font-size: 0.9rem; }
-.tracked-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
-.tracked-item {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.92rem;
+.coverage h2,
+.hidden-jobs h2 { margin: 0 0 0.4rem; font-size: 1.25rem; }
+.coverage .muted,
+.hidden-jobs .muted { color: var(--muted); font-size: 0.88rem; }
+.cov-list { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.cov-item { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.cov-item:last-child { border-bottom: none; }
+.cov-main { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.cov-name { font-weight: 600; }
+.cov-ats { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+.cov-detail,
+.cov-counts { font-size: 0.82rem; color: var(--muted); margin-top: 0.2rem; }
+.cov-tag-ok { background: #dcfce7; color: #166534; }
+.cov-tag-failing { background: #fef3c7; color: #92400e; }
+.cov-tag-never_checked { background: #e0e7ff; color: #3730a3; }
+.cov-tag-not_supported { background: #f1f5f9; color: var(--muted); }
+.cov-failing .cov-detail { color: #92400e; }
+.cov-unsupported { margin-top: 0.75rem; }
+.cov-unsupported summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+
+/* Hidden jobs tab. */
+.hidden-controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-top: 0.6rem; }
+.hidden-controls .search { flex: 1 1 240px; }
+.hidden-controls input[type="search"],
+.hidden-controls select {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.9rem;
 }
-.tracked-item:last-child { border-bottom: none; }
-.tracked-name { font-weight: 600; flex: 1 1 auto; }
-.tracked-ats {
-  color: var(--muted);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-.tracked-count { color: var(--muted); font-size: 0.85rem; }
+.hidden-list { list-style: none; margin: 0; padding: 0; }
+.hidden-item { padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
+.hidden-head { display: flex; flex-direction: column; }
+.hidden-title { font-weight: 600; }
+.hidden-company { color: var(--muted); font-size: 0.85rem; }
+.hidden-reasons { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.hidden-evidence { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--muted); font-style: italic; }
+.hidden-audit { margin: 0.3rem 0 0; font-size: 0.82rem; }
+.hidden-links { display: flex; gap: 0.9rem; margin-top: 0.35rem; font-size: 0.82rem; align-items: center; }
 
 .sitefoot { margin: 1.5rem 0 0.5rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
 

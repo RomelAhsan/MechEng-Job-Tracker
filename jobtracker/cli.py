@@ -363,6 +363,134 @@ def _rules_fingerprint() -> str:
     return digest.hexdigest()
 
 
+@app.command("workday-filters")
+def workday_filters(
+    output: str = typer.Option(
+        "config/workday_filters.json", "--output", help="Where to write the filters."
+    ),
+) -> None:
+    """Record each Workday board's student and Canada/US search filters.
+
+    The Apify fallback needs these to fetch only student roles in Canada/US
+    from boards that refuse GitHub's servers. Run it from a network Workday
+    answers; boards it cannot reach keep their previous entry.
+    """
+    from jobtracker.config.companies_loader import load_companies
+    from jobtracker.connectors.http import HttpClient
+    from jobtracker.connectors.workday import WorkdayConnector, _coordinates
+    from jobtracker.connectors.workday_targeting import (
+        DEEP_SAMPLE_OFFSET,
+        DEEP_SAMPLE_OVER,
+        MIN_DEEP_STUDENT_SHARE,
+        Query,
+        build_plan,
+        load_plans,
+        save_plans,
+        student_share,
+    )
+
+    plans = load_plans(output)
+    companies = [
+        c for c in load_companies(get_settings().companies_file)
+        if c.ats == "workday" and c.enabled
+    ]
+    with HttpClient() as http:
+        connector = WorkdayConnector(http)
+        for company in companies:
+            coords = _coordinates(company)
+            if coords is None:
+                continue
+            try:
+                first = connector._search(coords, Query({}, ""), offset=0)
+                plan = build_plan(first)
+                if not plan.full_board:
+                    precise = []
+                    for query in plan.queries():
+                        if not query.search_text:
+                            continue
+                        page = connector._search(coords, query, offset=0)
+                        titles = [
+                            str(p.get("title") or "") for p in page.get("jobPostings") or []
+                        ]
+                        total = page.get("total")
+                        if plan.skip_keyword(total, titles):
+                            continue
+                        if isinstance(total, int) and total > DEEP_SAMPLE_OVER:
+                            deep = connector._search(
+                                coords, query, offset=min(DEEP_SAMPLE_OFFSET, total - 20)
+                            )
+                            deep_titles = [
+                                str(p.get("title") or "")
+                                for p in deep.get("jobPostings") or []
+                            ]
+                            if student_share(deep_titles) < MIN_DEEP_STUDENT_SHARE:
+                                continue
+                        precise.append(query.search_text)
+                    plan.keywords = precise
+            except Exception as exc:  # noqa: BLE001 - keep the previous entry
+                typer.echo(f"{company.id}: not reachable ({exc}); kept previous filters")
+                continue
+            plans[company.id] = plan
+            typer.echo(
+                f"{company.id}: "
+                + ("whole board" if plan.full_board else
+                   f"student filters {list(plan.student)}, country "
+                   f"{list(plan.country)}, keywords {plan.keywords}")
+            )
+    path = save_plans(plans, output)
+    typer.echo(f"Wrote {len(plans)} boards to {path}.")
+
+
+@app.command("check-links")
+def check_links() -> None:
+    """Check that every job the website shows is still open.
+
+    Closed postings are removed at once; postings whose job site refuses our
+    checker are kept and tagged "can't be checked" with the reason.
+    """
+    from jobtracker.connectors.http import HttpClient
+    from jobtracker.services import link_check_service, web_export_service
+
+    settings = get_settings().model_copy(update={"http_max_retries": 1})
+    with _session_scope() as session, HttpClient(settings) as http:
+        ids = [v.job_id for v in web_export_service.shown_views(session)]
+        summary = link_check_service.run_link_checks(session, http, ids)
+    typer.echo(
+        f"Link check: {summary.checked} jobs, {summary.open} open, "
+        f"{len(summary.closed)} closed and removed, {summary.cant_check} can't be checked."
+    )
+
+
+@app.command("audit-rejections")
+def audit_rejections(
+    limit: int = typer.Option(12, "--limit", help="Jobs per run (one AI request)."),
+    min_interval_hours: float = typer.Option(
+        2.0, "--min-interval-hours", help="Skip if the last audit was more recent."
+    ),
+) -> None:
+    """AI spot-check of a few jobs the rules hid (flags possible rule mistakes)."""
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from jobtracker.services import audit_service
+
+    marker = Path("state/rule_audit_last.txt")
+    if marker.exists() and min_interval_hours > 0:
+        try:
+            last = datetime.fromisoformat(marker.read_text(encoding="utf-8").strip())
+            hours = (datetime.now(UTC) - last).total_seconds() / 3600
+            if hours < min_interval_hours:
+                typer.echo(f"Last rule audit {hours:.1f} h ago; skipped.")
+                return
+        except ValueError:
+            pass
+    with _session_scope() as session:
+        done = audit_service.audit_rejected_jobs(session, limit=limit)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
+    typer.echo(f"Rule audit: {done} jobs checked by the AI.")
+
+
 @app.command("screen")
 def screen(
     only_if_rules_changed: bool = typer.Option(
