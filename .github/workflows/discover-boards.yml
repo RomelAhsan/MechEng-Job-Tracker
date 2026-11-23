@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "discover (find boards) or probe (check which boards answer GitHub)"
+        description: "discover (find boards), probe (which boards answer GitHub), or apify (Apify filter/cost test)"
         required: false
         default: discover
 
@@ -31,11 +31,11 @@ jobs:
         run: python scripts/runner_probe.py
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-      - if: inputs.mode != 'probe'
+      - if: inputs.mode == 'discover' || inputs.mode == ''
         run: python scripts/discover_boards.py
-      # Tiny Apify runs (~$0.001 each) to find the start-URL form the Workday
-      # Actor accepts. Skipped when no APIFY_TOKEN secret is set.
-      - if: inputs.mode != 'probe'
+      # Tiny Apify runs (well under $0.01 in total) to see how the Workday
+      # Actor handles filtered URLs. Skipped when no APIFY_TOKEN secret is set.
+      - if: inputs.mode == 'apify'
         run: python scripts/apify_probe.py
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
