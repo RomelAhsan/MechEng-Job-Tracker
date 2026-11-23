@@ -247,7 +247,9 @@ class ApifyWorkdayConnector(Connector):
                 run_timeout=timedelta(
                     seconds=int(self._settings.apify_fallback_wait_secs) + 120
                 ),
-                memory_mbytes=1024,
+                # Apify bills memory x time; this Actor mostly waits on the
+                # network, so 512 MB halves the cost of each sweep.
+                memory_mbytes=512,
             )
         except Exception as exc:  # noqa: BLE001 - fail-soft.
             logger.warning("Could not start Apify run: %s", exc)

@@ -170,7 +170,9 @@ class OracleConnector(Connector):
                 if req_id in seen:
                     continue
                 seen.add(req_id)
-                raw_jobs.append(self._to_raw(origin, site, req))
+                raw = self._to_raw(origin, site, req)
+                if raw is not None:
+                    raw_jobs.append(raw)
             offset += len(reqs)
             if isinstance(total, int) and offset >= total:
                 break
@@ -197,7 +199,7 @@ class OracleConnector(Connector):
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
 
-    def _to_raw(self, origin: str, site: str, req: dict) -> RawJob:
+    def _to_raw(self, origin: str, site: str, req: dict) -> RawJob | None:
         req_id = str(req.get("Id"))
         public_url = f"{origin}/hcmUI/CandidateExperience/en/sites/{site}/job/{req_id}"
         known = self.known_by_id.get(req_id)
@@ -216,6 +218,8 @@ class OracleConnector(Connector):
                 employment_type_hint=req.get("WorkplaceType"),
                 extra={**req, "_reused": True},
             )
+        if not self.new_detail_allowed():
+            return None  # left for the next run (detail limit)
         detail = self._detail(origin, site, req_id)
         description = _description_html(detail or req)
         posted = (

@@ -162,6 +162,8 @@ class RadancyConnector(Connector):
                         )
                     )
                     continue
+                if not self.new_detail_allowed():
+                    continue  # left for the next run (detail limit)
                 raw = self._detail(url, title, location)
                 if raw is not None:
                     raw_jobs.append(raw)

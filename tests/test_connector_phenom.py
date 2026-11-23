@@ -55,20 +55,31 @@ def test_parse_widgets_maps_posted_date_from_ms() -> None:
 
 @respx.mock
 def test_phenom_lists_and_fetches_detail_body() -> None:
-    route = respx.post(WIDGETS)
-    route.side_effect = [
-        httpx.Response(200, json=load_fixture("phenom_refine_page1.json")),
-        httpx.Response(200, json=load_fixture("phenom_detail_rtx111.json")),
-        httpx.Response(200, json=load_fixture("phenom_detail_rtx222.json")),
-    ]
+    import json as _json
 
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _json.loads(request.content)
+        calls.append(body)
+        if body["ddoKey"] == "jobDetail":
+            name = "phenom_detail_rtx111.json" if body["jobId"] == "RTX111" else (
+                "phenom_detail_rtx222.json"
+            )
+            return httpx.Response(200, json=load_fixture(name))
+        if body.get("keywords") == "intern":
+            return httpx.Response(200, json=load_fixture("phenom_refine_page1.json"))
+        return httpx.Response(200, json={"refineSearch": {"totalHits": 0, "data": {"jobs": []}}})
+
+    respx.post(WIDGETS).mock(side_effect=handler)
     client = _client()
     raw_jobs = PhenomConnector(client).fetch(_company())
     client.close()
 
     assert len(raw_jobs) == 2
-    # One list POST + one detail POST per job.
-    assert route.call_count == 3
+    # Student keyword searches, then one detail POST per (new) job.
+    assert all(c.get("keywords") for c in calls if c["ddoKey"] == "refineSearch")
+    assert sum(1 for c in calls if c["ddoKey"] == "jobDetail") == 2
     by_id = {r.source_job_id: r for r in raw_jobs}
     assert "SolidWorks" in by_id["RTX111"].description_html
     assert "CFD" in by_id["RTX222"].description_html

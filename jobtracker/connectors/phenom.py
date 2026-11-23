@@ -33,7 +33,7 @@ import re
 from datetime import UTC, datetime
 
 from jobtracker.connectors.base import Connector, RawJob
-from jobtracker.connectors.http import HttpClient
+from jobtracker.connectors.http import BlockedError, HttpClient
 from jobtracker.normalize.posting_date import parse_relative_posted
 from jobtracker.schemas.company import CompanyConfig
 
@@ -41,6 +41,11 @@ logger = logging.getLogger("jobtracker.connectors.phenom")
 
 #: Jobs requested per ``refineSearch`` page.
 _PAGE_SIZE = 500
+#: Student keyword searches. RTX's board has ~4,500 postings and only a few
+#: hundred are student roles; these searches cover them (checked against a
+#: full listing). Phenom's bot protection sometimes refuses one keyword; the
+#: others still run.
+_STUDENT_KEYWORDS = ("intern", "internship", "coop", "co op", "co-op", "stagiaire", "stage")
 #: Phenom caps the search window at ``from + size < 10000``.
 _MAX_WINDOW = 10000
 
@@ -182,70 +187,86 @@ class PhenomConnector(Connector):
 
         url = f"https://{host}/widgets"
         # ``max_postings`` (set only for the one-time add-time poll) caps how
-        # many postings we fetch full descriptions for, so a 4600-job board does
-        # not issue thousands of per-posting detail calls and hold the add. The
-        # scheduled poll leaves it ``None`` and fetches everything.
+        # many postings are returned so a huge board cannot hold the add.
         cap = self.max_postings if isinstance(self.max_postings, int) else None
+        listed: dict[str, RawJob] = {}
+        last_error: Exception | None = None
+        answered = 0
+        for keyword in _STUDENT_KEYWORDS:
+            try:
+                for raw in self._search_all(url, host, keyword):
+                    listed.setdefault(raw.source_job_id, raw)
+                answered += 1
+            except BlockedError as exc:
+                logger.info("Phenom %s: search %r refused (%s)", host, keyword, exc.reason)
+                last_error = exc
+        if answered == 0 and last_error is not None:
+            raise last_error
+
         raw_jobs: list[RawJob] = []
-        seen: set[str] = set()
-        offset = 0
-        while offset + _PAGE_SIZE < _MAX_WINDOW:
-            page = self._search(url, offset)
-            refine = page.get("refineSearch") if isinstance(page, dict) else None
-            total = refine.get("totalHits") if isinstance(refine, dict) else None
-            parsed = parse_widgets(page, host)
-            if not parsed:
+        skipped = 0
+        for raw in listed.values():
+            if not self._attach_detail(url, host, raw):
+                skipped += 1
+                continue
+            raw_jobs.append(raw)
+            if cap is not None and len(raw_jobs) >= cap:
                 break
-            for raw in parsed:
-                if raw.source_job_id in seen:
-                    continue
-                seen.add(raw.source_job_id)
-                self._attach_detail(url, host, raw)
-                raw_jobs.append(raw)
-                if cap is not None and len(raw_jobs) >= cap:
-                    logger.info(
-                        "Phenom board for %s reached the add-time cap of %d "
-                        "postings; the scheduled poll will fetch the rest.",
-                        company.id,
-                        cap,
-                    )
-                    return raw_jobs
-            offset += _PAGE_SIZE
-            if not isinstance(total, int) or offset >= total:
-                break
+        if skipped:
+            logger.info(
+                "Phenom %s: %d new postings left for the next run (detail limit).",
+                host,
+                skipped,
+            )
         if not raw_jobs:
             logger.info("Phenom board for %s returned no jobs.", company.id)
         return raw_jobs
 
-    def _search(self, url: str, offset: int) -> dict:
-        response = self.http.request(
-            "POST",
-            url,
-            json_body={
-                "ddoKey": "refineSearch",
-                "jobs": True,
-                "from": offset,
-                "size": _PAGE_SIZE,
-                "sort": {"order": "desc", "field": "dateCreated"},
-            },
-        )
+    def _search_all(self, url: str, host: str, keyword: str) -> list[RawJob]:
+        out: list[RawJob] = []
+        offset = 0
+        while offset + _PAGE_SIZE < _MAX_WINDOW:
+            page = self._search(url, offset, keyword)
+            refine = page.get("refineSearch") if isinstance(page, dict) else None
+            total = refine.get("totalHits") if isinstance(refine, dict) else None
+            parsed = parse_widgets(page, host)
+            out.extend(parsed)
+            offset += _PAGE_SIZE
+            if not parsed or not isinstance(total, int) or offset >= total:
+                break
+        return out
+
+    def _search(self, url: str, offset: int, keyword: str = "") -> dict:
+        body: dict = {
+            "ddoKey": "refineSearch",
+            "jobs": True,
+            "from": offset,
+            "size": _PAGE_SIZE,
+            "sort": {"order": "desc", "field": "dateCreated"},
+        }
+        if keyword:
+            body["keywords"] = keyword
+        response = self.http.request("POST", url, json_body=body)
         # CORE RULE #1: a 401/403 (auth wall) must surface, not be worked around.
         response.raise_for_status()
         payload = response.json()
         return payload if isinstance(payload, dict) else {}
 
-    def _attach_detail(self, url: str, host: str, raw: RawJob) -> None:
-        """Fetch and attach the FULL description for one job.
+    def _attach_detail(self, url: str, host: str, raw: RawJob) -> bool:
+        """Attach the FULL description for one job; False if left for later.
 
         A posting already stored with a description reuses it instead of a
-        detail request (one per posting per poll is thousands for RTX).
+        detail request (one per posting per poll is thousands for RTX). New
+        postings past the per-run detail limit return False.
         """
         known = self.known_by_id.get(raw.source_job_id)
         if known is not None and known.description:
             raw.description_html = known.description
             raw.posted_at = raw.posted_at or known.posted_at
             raw.extra["_reused"] = True
-            return
+            return True
+        if not self.new_detail_allowed():
+            return False
         response = self.http.request(
             "POST", url, json_body={"ddoKey": "jobDetail", "jobId": raw.source_job_id}
         )
@@ -271,3 +292,4 @@ class PhenomConnector(Connector):
             raw.posted_at = detail_posted
         if job:
             raw.extra["_detail"] = job
+        return True
