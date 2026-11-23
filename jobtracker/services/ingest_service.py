@@ -272,6 +272,8 @@ def _ingest_company(
     # None so the connector fetches the full board.
     if max_postings is not None:
         connector.max_postings = max_postings
+    connector.max_new_details = get_settings().max_new_details_per_run
+    connector.new_details_fetched = 0
     raw_jobs = connector.fetch(config)
 
     # Unsupported ATS: the fallback stub returns [] and flags requires_fallback.
@@ -490,6 +492,14 @@ class _WorkdayFallback:
             detail_urls.extend(missing)
 
         details: dict[str, RawJob] = {}
+        limit = max(1, int(settings.apify_max_new_details_per_sweep))
+        if len(detail_urls) > limit:
+            logger.info(
+                "Apify sweep: %d new postings; fetching %d now, the rest next sweep.",
+                len(detail_urls),
+                limit,
+            )
+            detail_urls = detail_urls[:limit]
         if detail_urls:
             run_id = connector.start_details(detail_urls)
             remaining = max(30, int(deadline - time.monotonic()))
@@ -569,11 +579,24 @@ def run(
             result = CompanyRunResult(company_id=company.id, status="error", error=reason)
         summary.companies.append(result)
 
+    import time
+
+    deadline = time.monotonic() + max(60, int(get_settings().poll_time_budget_secs))
+    skipped: list[str] = []
     for company in workday:
         _poll(company)
     fallback.start()
     for company in others:
+        if time.monotonic() > deadline:
+            skipped.append(company.id)
+            continue
         _poll(company)
+    if skipped:
+        logger.warning(
+            "Time budget reached; %d companies left for the next run: %s",
+            len(skipped),
+            ", ".join(skipped[:20]),
+        )
 
     for company, raw_jobs in fallback.collect(session):
         try:

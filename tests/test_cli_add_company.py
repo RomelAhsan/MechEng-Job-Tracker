@@ -42,36 +42,35 @@ def companies_file(tmp_path, monkeypatch: pytest.MonkeyPatch) -> str:
 
 
 def _mock_phenom() -> None:
-    route = respx.post(WIDGETS)
-    route.side_effect = [
-        httpx.Response(
-            200,
-            json={
-                "refineSearch": {
-                    "totalHits": 1,
-                    "data": {
-                        "jobs": [
-                            {
-                                "jobId": "RTX111",
-                                "title": "Intern",
-                                "location": "Tucson, Arizona, United States",
-                                "dateCreated": 1767974400000,
-                                "descriptionTeaser": "teaser",
-                            }
-                        ]
-                    },
-                }
+    import json as _json
+
+    listing = {
+        "refineSearch": {
+            "totalHits": 1,
+            "data": {
+                "jobs": [
+                    {
+                        "jobId": "RTX111",
+                        "title": "Intern",
+                        "location": "Tucson, Arizona, United States",
+                        "dateCreated": 1767974400000,
+                        "descriptionTeaser": "teaser",
+                    }
+                ]
             },
-        ),
-        httpx.Response(
-            200,
-            json={
-                "jobDetail": {
-                    "data": {"job": {"jobId": "RTX111", "description": "<p>Full.</p>"}}
-                }
-            },
-        ),
-    ]
+        }
+    }
+    detail = {
+        "jobDetail": {"data": {"job": {"jobId": "RTX111", "description": "<p>Full.</p>"}}}
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _json.loads(request.content)
+        if body["ddoKey"] == "jobDetail":
+            return httpx.Response(200, json=detail)
+        return httpx.Response(200, json=listing)
+
+    respx.post(WIDGETS).mock(side_effect=handler)
 
 
 def _huge_phenom(total: int) -> None:

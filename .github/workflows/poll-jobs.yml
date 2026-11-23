@@ -49,7 +49,9 @@ permissions:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Normal runs take 5-10 minutes. The polling step stops starting new
+    # companies after 20 minutes, so even a catch-up run saves its work.
+    timeout-minutes: 90
 
     # Secrets are read here at the job level. The `secrets` context is NOT
     # available in a step-level `if`, so the steps below gate on `env` instead.
@@ -180,7 +182,7 @@ jobs:
       # step-level timeout is a final backstop. The daily free-tier quota is
       # handled gracefully in-app (the pass stops cleanly and resumes next run).
       - name: Screen with AI (optional, throttled)
-        timeout-minutes: 30
+        timeout-minutes: 10
         continue-on-error: true
         run: python -m jobtracker screen-ai --only-missing --limit 150
 
@@ -243,7 +245,14 @@ jobs:
       # otherwise the next run must re-screen everything.
       - name: Forget the screening fingerprint when the DB was not saved
         if: always() && env.SAVE_DB != '1'
-        run: rm -f state/screen_fingerprint.txt
+        run: |
+          rm -f state/screen_fingerprint.txt
+          # Also forget which Workday boards were swept through Apify: their
+          # results were not saved, so the next run must sweep them again.
+          # The spend entries stay (they protect the free credit).
+          if [ -f state/apify_usage.json ]; then
+            python3 -c 'import json,pathlib; p=pathlib.Path("state/apify_usage.json"); d=json.loads(p.read_text()); p.write_text(json.dumps({k:v for k,v in d.items() if not k.startswith("last_sweep:")}, indent=2))'
+          fi
 
       - name: Cache run state
         if: always() && hashFiles('state/**') != ''

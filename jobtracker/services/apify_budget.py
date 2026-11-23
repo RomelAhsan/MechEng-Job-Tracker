@@ -32,6 +32,10 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 DEFAULT_LEDGER_PATH = "state/apify_usage.json"
+#: Ledger key prefix for "this board was swept at" marks. The workflow drops
+#: these marks when a run's database was not saved, so a lost run's boards
+#: are swept again instead of waiting out the interval.
+SWEEP_MARK = "last_sweep:"
 
 
 @dataclass
@@ -100,14 +104,14 @@ class ApifyBudget:
     # --- per-company run spacing -------------------------------------------
     def due(self, company_id: str, interval_seconds: float) -> bool:
         """True when ``company_id`` has not been fetched in ``interval_seconds``."""
-        last = self._load().get(f"last_run:{company_id}")
+        last = self._load().get(f"{SWEEP_MARK}{company_id}")
         if last is None:
             return True
         return datetime.now(UTC).timestamp() - last >= interval_seconds
 
     def mark_run(self, company_id: str) -> None:
         ledger = self._load()
-        ledger[f"last_run:{company_id}"] = datetime.now(UTC).timestamp()
+        ledger[f"{SWEEP_MARK}{company_id}"] = datetime.now(UTC).timestamp()
         self._save(ledger)
 
     # --- public API --------------------------------------------------------

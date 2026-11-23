@@ -152,6 +152,9 @@ class WorkdayConnector(Connector):
                 raw_jobs.append(raw)
         return raw_jobs
 
+    def _new_detail_ok(self) -> bool:
+        return self.new_detail_allowed()
+
     def _fetch_all_postings(self, coords: WorkdayCoordinates) -> list[dict]:
         """List the board's student postings in Canada/US (or the whole board).
 
@@ -274,6 +277,8 @@ class WorkdayConnector(Connector):
                 extra={"_reused": True},
             )
 
+        if not self._new_detail_ok():
+            return None  # left for the next run (detail limit)
         # CORE RULE #1: a board may list postings publicly but auth-wall the
         # per-posting detail endpoint. ``get_json`` does not raise on 401/403,
         # which would silently yield postings with empty descriptions; so we

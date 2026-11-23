@@ -68,6 +68,19 @@ class Connector(ABC):
     #: that paginate or issue a per-posting detail request should stop once this
     #: many postings have been collected. The scheduled poll leaves it ``None``.
     max_postings: int | None = None
+    #: Most NEW postings to download details for in one fetch (None = no
+    #: limit). New postings past the limit are left out of this fetch; they
+    #: are not stored yet, so leaving them out removes nothing.
+    max_new_details: int | None = None
+    #: How many new-posting detail downloads this fetch has made.
+    new_details_fetched: int = 0
+
+    def new_detail_allowed(self) -> bool:
+        """Count one new-posting download; False once the limit is reached."""
+        if self.max_new_details is not None and self.new_details_fetched >= self.max_new_details:
+            return False
+        self.new_details_fetched += 1
+        return True
 
     @abstractmethod
     def fetch(self, company: CompanyConfig) -> list[RawJob]:

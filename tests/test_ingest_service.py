@@ -111,3 +111,35 @@ def test_fallback_marks_requires_fallback(
     assert summary.companies[0].status == "requires_fallback"
     health = session.get(SourceHealth, "htmlco")
     assert health.last_status == "requires_fallback"
+
+
+def test_time_budget_leaves_remaining_companies_for_next_run(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    _seed_two_companies(session)
+    monkeypatch.setattr(
+        ingest_service, "get_connector", lambda ats, http: _OkConnector([_raw("1", "Intern")])
+    )
+    clock = iter([0.0] + [10_000.0] * 50)  # the budget is used up after the first read
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+
+    summary = ingest_service.run(session, http=object())
+
+    assert summary.companies == []  # both left for the next run, nothing lost
+    assert session.query(Job).count() == 0
+
+
+def test_new_detail_limit_counts_only_new_postings() -> None:
+    from jobtracker.connectors.base import Connector
+
+    class _C(Connector):
+        ats = "x"
+
+        def fetch(self, company):  # pragma: no cover - not used
+            return []
+
+    connector = _C()
+    connector.max_new_details = 2
+    assert [connector.new_detail_allowed() for _ in range(3)] == [True, True, False]

@@ -123,11 +123,25 @@ class Settings(BaseSettings):
     #: at most once per this many hours each. The daily free-credit allowance
     #: (see ``apify_monthly_budget_usd``) is the real ceiling: when it runs low
     #: the sweep is skipped until the allowance builds up again.
-    apify_fallback_interval_hours: float = 1.0
+    apify_fallback_interval_hours: float = 2.0
     #: Do not start an Apify run when today's rolled allowance is below this.
     apify_min_allowance_usd: float = 0.05
     #: Total seconds the poll waits for all started Apify runs at the end.
     apify_fallback_wait_secs: int = 300
+
+    #: Most NEW postings a connector downloads full details for in one run
+    #: (stored postings are reused for free). A board seen for the first time
+    #: (RTX: 4,500 postings) otherwise takes longer than a whole run; the rest
+    #: are picked up by the next runs.
+    max_new_details_per_run: int = 150
+    #: Seconds the polling step may spend before it stops starting new
+    #: companies (they are polled next run), so a run always finishes and
+    #: saves its work well inside GitHub's 60-minute job limit.
+    poll_time_budget_secs: int = 1200
+    #: Most new Workday postings the Apify sweep fetches details for at once.
+    #: Apify fetches them in parallel on its side (~600 took 4 minutes and
+    #: $0.044), so the first sweep can catch up in one go.
+    apify_max_new_details_per_sweep: int = 800
 
     # HTTP / connectors
     http_timeout: float = 30.0
