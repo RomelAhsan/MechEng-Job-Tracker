@@ -230,6 +230,11 @@ class ApifyWorkdayConnector(Connector):
             self._budget.mark_run(company_id)
 
     def _start(self, urls: list[str], *, details: bool) -> str | None:
+        wait = (
+            int(self._settings.apify_details_wait_secs)
+            if details
+            else int(self._settings.apify_fallback_wait_secs)
+        )
         client = self._get_client()
         if client is None or not urls:
             return None
@@ -249,12 +254,10 @@ class ApifyWorkdayConnector(Connector):
                 ),
                 # Bounded run: Apify stops it itself, so a stuck run can never
                 # keep spending credit.
-                run_timeout=timedelta(
-                    seconds=int(self._settings.apify_fallback_wait_secs) + 120
-                ),
-                # Apify bills memory x time; this Actor mostly waits on the
-                # network, so 512 MB halves the cost of each sweep.
-                memory_mbytes=512,
+                run_timeout=timedelta(seconds=wait + 60),
+                # 512 MB made the details run too slow to finish (cost is
+                # memory x time, so 1 GB costs about the same overall).
+                memory_mbytes=1024,
             )
         except Exception as exc:  # noqa: BLE001 - fail-soft.
             logger.warning("Could not start Apify run: %s", exc)

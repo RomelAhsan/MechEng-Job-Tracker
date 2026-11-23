@@ -513,18 +513,29 @@ class _WorkdayFallback:
             detail_urls = detail_urls[:limit]
         details_ok = True
         if detail_urls:
-            run_id = connector.start_details(detail_urls)
-            items = (
-                connector.wait_items(run_id, wait_secs=int(settings.apify_details_wait_secs))
-                if run_id
-                else None
-            )
-            details_ok = items is not None
-            for item in items or []:
-                raw = connector.detail_to_raw(item)
-                path = connector.item_path(item)
-                if raw is not None and path:
-                    details[path] = raw
+            # Several smaller runs in parallel finish much sooner than one big
+            # one (about 150 postings each).
+            chunk = max(1, int(settings.apify_details_chunk))
+            run_ids = [
+                connector.start_details(detail_urls[i : i + chunk])
+                for i in range(0, len(detail_urls), chunk)
+            ]
+            details_deadline = time.monotonic() + int(settings.apify_details_wait_secs)
+            for run_id in run_ids:
+                items = (
+                    connector.wait_items(
+                        run_id,
+                        wait_secs=max(30, int(details_deadline - time.monotonic())),
+                    )
+                    if run_id
+                    else None
+                )
+                details_ok = details_ok and items is not None
+                for item in items or []:
+                    raw = connector.detail_to_raw(item)
+                    path = connector.item_path(item)
+                    if raw is not None and path:
+                        details[path] = raw
 
         # Only count the boards as swept when their new postings arrived too;
         # otherwise the next run sweeps them again.

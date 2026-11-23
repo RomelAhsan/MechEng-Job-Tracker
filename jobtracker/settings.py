@@ -135,6 +135,8 @@ class Settings(BaseSettings):
     #: Seconds the poll waits for the Apify details run (new postings only;
     #: ~600 postings took 4 minutes on the first sweep).
     apify_details_wait_secs: int = 480
+    #: New-posting detail URLs per Apify run; the runs execute in parallel.
+    apify_details_chunk: int = 150
 
     #: Most NEW postings a connector downloads full details for in one run
     #: (stored postings are reused for free). A board seen for the first time
