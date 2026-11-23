@@ -28,6 +28,8 @@ on:
 # Needed to commit config/companies.yaml back to main.
 permissions:
   contents: write
+  # Starts the site deploy at the end (a push made by this workflow does not).
+  actions: write
 
 # Serialize adds so two runs never race the same cached SQLite DB, but NEVER
 # cancel an in-flight add (the user hit legitimate RTX adds being cancelled).
@@ -200,6 +202,15 @@ jobs:
         with:
           path: jobtracker.db
           key: jobtracker-db-${{ github.run_id }}
+
+      # Publish the new company's jobs now instead of waiting for the next
+      # poll (a push made by this workflow does not start the deploy).
+      - name: Update the website
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/deploy-site.yml/dispatches" -f ref=main || true
 
       - name: Cache run state
         if: always() && hashFiles('state/**') != ''

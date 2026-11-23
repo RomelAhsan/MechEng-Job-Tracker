@@ -261,6 +261,17 @@ jobs:
           path: state/
           key: jobtracker-state-${{ github.run_id }}
 
+      # Publish this run's results. GitHub does not start the "Deploy site"
+      # workflow from a "completed" event when this run was itself started by
+      # the previous run (self-chaining), so the deploy is started directly.
+      - name: Update the website
+        if: always() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/deploy-site.yml/dispatches" \
+            -f ref=main || echo "::warning::Could not start the site deploy."
+
       # Self-chaining: start the next run now; it waits until 10 minutes after
       # this run started. Only on main, so test runs on branches never chain.
       - name: Start the next check

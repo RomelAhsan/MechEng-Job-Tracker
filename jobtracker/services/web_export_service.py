@@ -401,6 +401,9 @@ def _coverage(
         counts = hidden_by_company.setdefault(str(item["company_id"]), {})
         counts[str(item["group"])] = counts.get(str(item["group"]), 0) + 1
 
+    from jobtracker.services.link_check_service import recent_window
+
+    window = recent_window()
     out: list[dict[str, object]] = []
     companies = session.scalars(
         select(Company).where(Company.active.is_(True), Company.enabled.is_(True))
@@ -417,12 +420,12 @@ def _coverage(
             or health.last_checked_at is None
             or (health.last_status == "requires_fallback" and not last_ok)
             or (health.last_status == "requires_fallback" and company.ats not in _STUB_ATS
-                and not (last_ok and now - last_ok <= timedelta(hours=3)))
+                and not (last_ok and now - last_ok <= window))
         ):
             # Never read with its current connector yet (e.g. just upgraded
             # from an unsupported placeholder).
             status = "never_checked"
-        elif health.last_status == "ok" or (last_ok and now - last_ok <= timedelta(hours=3)):
+        elif health.last_status == "ok" or (last_ok and now - last_ok <= window):
             status = "ok"
         else:
             status = "failing"

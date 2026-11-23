@@ -500,16 +500,25 @@ class _WorkdayFallback:
                 limit,
             )
             detail_urls = detail_urls[:limit]
+        details_ok = True
         if detail_urls:
             run_id = connector.start_details(detail_urls)
-            remaining = max(30, int(deadline - time.monotonic()))
-            for item in (connector.wait_items(run_id, wait_secs=remaining) or []) if run_id else []:
+            items = (
+                connector.wait_items(run_id, wait_secs=int(settings.apify_details_wait_secs))
+                if run_id
+                else None
+            )
+            details_ok = items is not None
+            for item in items or []:
                 raw = connector.detail_to_raw(item)
                 path = connector.item_path(item)
                 if raw is not None and path:
                     details[path] = raw
 
-        connector.mark_fetched([c.id for c, _r, _m in pending])
+        # Only count the boards as swept when their new postings arrived too;
+        # otherwise the next run sweeps them again.
+        if details_ok:
+            connector.mark_fetched([c.id for c, _r, _m in pending])
         for company, raws, missing in pending:
             for url in missing:
                 path = url[url.index("/job/"):]

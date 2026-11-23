@@ -32,6 +32,8 @@ on:
 
 permissions:
   contents: write
+  # Starts the site deploy (a push made by this workflow does not).
+  actions: write
 
 jobs:
   report:
@@ -67,9 +69,18 @@ jobs:
           fi
           git commit -m "chore: ${ACTION} reported job ${JOB_ID}"
           for attempt in 1 2 3 4 5; do
-            if git push; then exit 0; fi
+            if git push; then echo "PUSHED=1" >> "$GITHUB_ENV"; exit 0; fi
             sleep $(( attempt * 3 ))
             git pull --rebase
           done
           echo "::error::Could not push the report after 5 attempts."
           exit 1
+
+      # A push made with this workflow's token does not start other
+      # workflows, so start the site deploy directly.
+      - name: Update the website
+        if: env.PUSHED == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/deploy-site.yml/dispatches" -f ref=main
